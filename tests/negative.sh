@@ -9,7 +9,7 @@
 #
 # Each case copies the hello fixture, breaks it, and expects a failure
 # whose output contains a given text: a lockfile that go.mod outgrew, a
-# tampered hash, a missing download, a malformed lockfile, and a lockfile
+# hash changed by hand, a missing download, a malformed lockfile, and a lockfile
 # of another format version.
 set -euo pipefail
 
@@ -31,13 +31,20 @@ fixture() {
   echo "$tmp/$1"
 }
 
-# Edits the lockfile of a copy with a Python expression on `lock`.
+# Edits the lockfile of a copy with a Python statement on `lock`; with
+# "rehash", also writes the contentHash go-purifier computes
+# (cmd/go-purifier/contentHash.go), as a lockfile from another go-purifier
+# would have.
 edit_lock() {
-  python3 - "$1/go-purifier.lock.json" "$2" << 'EOF'
-import json, sys
-path, expression = sys.argv[1], sys.argv[2]
+  python3 - "$1/go-purifier.lock.json" "$2" "${3:-}" << 'EOF'
+import base64, hashlib, json, sys
+path, statement, rehash = sys.argv[1], sys.argv[2], sys.argv[3]
 lock = json.load(open(path))
-exec(expression)
+exec(statement)
+if rehash:
+    body = {k: v for k, v in lock.items() if k != "contentHash"}
+    canonical = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    lock["contentHash"] = "sha256-" + base64.b64encode(hashlib.sha256(canonical.encode()).digest()).decode()
 json.dump(lock, open(path, "w"), indent=2)
 EOF
 }
@@ -48,13 +55,10 @@ expect_build_failure() {
   local dir=$1 text=$2 log="$tmp/build.log"
   if nix build --impure --no-link --expr "
     let
-      flake = builtins.getFlake \"path:$repo\";
-      pkgs = import flake.inputs.nixpkgs {
-        system = builtins.currentSystem;
-        overlays = [ flake.overlays.default ];
-      };
+      flake = builtins.getFlake \"git+file:$repo\";
+      pkgs = import flake.inputs.nixpkgs { system = builtins.currentSystem; };
     in
-    (pkgs.buildGoProject { src = /. + \"$dir\"; }).packages.greet
+    (flake.lib.go-purifier.buildGoProject { inherit pkgs; src = /. + \"$dir\"; }).packages.greet
   " > "$log" 2>&1; then
     echo "negative: the Nix build of $dir succeeded; expected a failure mentioning: $text" >&2
     exit 1
@@ -83,45 +87,39 @@ expect_go_failure() {
 }
 
 # go.mod changed after the lock: the Nix build stops at evaluation, and
-# the go wrapper warns that it resolves the usual way.
+# so does a build through the go wrapper.
 dir=$(fixture stale)
 printf '\n// edited after the lock\n' >> "$dir/go.mod"
 expect_build_failure "$dir" 'run `go-purifier lock` there'
-warning=$("$bin/go" -C "$dir" env GOPROXY 2>&1 > /dev/null)
-case "$warning" in
-*'until `go-purifier lock` renews it'*) ;;
-*)
-  echo "negative: the go wrapper did not warn about the stale lockfile: $warning" >&2
-  exit 1
-  ;;
-esac
+expect_go_failure "$dir" 'run `go-purifier lock`'
 
-# A tampered hash fails the fixed-output fetch.
+# A hash changed by hand no longer matches the contentHash.
 dir=$(fixture tampered)
 edit_lock "$dir" '
 k = next(k for k in sorted(lock["files"]) if k.endswith(".zip"))
 lock["files"][k] = "sha256-" + "A" * 43 + "="
 '
-expect_build_failure "$dir" "hash mismatch in fixed-output derivation"
+expect_build_failure "$dir" "contentHash does not match its content"
+expect_go_failure "$dir" "contentHash does not match its content"
 
 # A download missing from the lockfile: the go command cannot find it in
-# the proxy tree, and the hint says to relock.
+# the proxy tree, and the hint says to lock.
 dir=$(fixture missing)
 edit_lock "$dir" '
 lock["files"] = {k: v for k, v in lock["files"].items() if "golang.org/x/text" not in k or not k.endswith(".zip")}
-'
-expect_build_failure "$dir" 'does not hold. Run `go-purifier relock`'
-expect_go_failure "$dir" '`go-purifier relock` to rebuild the lockfile'
+' rehash
+expect_build_failure "$dir" 'does not hold. Run `go-purifier lock`'
+expect_go_failure "$dir" 'Run `go-purifier lock` and commit the lockfile'
 
 # A lockfile that is not JSON.
 dir=$(fixture malformed)
 echo '{ "version": 1, ' > "$dir/go-purifier.lock.json"
 expect_go_failure "$dir" 'is not a go-purifier lockfile'
-expect_build_failure "$dir" 'go-purifier.lock.json'
+expect_build_failure "$dir" 'run `go-purifier lock` to write it again'
 
 # A lockfile of another format version.
 dir=$(fixture version)
-edit_lock "$dir" 'lock["version"] = 99'
+edit_lock "$dir" 'lock["version"] = 99' rehash
 expect_build_failure "$dir" 'has lock format version 99'
 expect_go_failure "$dir" 'has lock format version 99'
 

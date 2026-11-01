@@ -104,7 +104,7 @@ func runWithHint(goBin string, args, env []string, proxyDir string) int {
 		return 0
 	}
 	if strings.Contains(stderr.String(), proxyDir) {
-		fmt.Fprintln(os.Stderr, "go-purifier: the go command needed a download that go-purifier.lock.json does not hold. Run `go-purifier lock` if go.mod changed, or `go-purifier relock` to rebuild the lockfile.")
+		fmt.Fprintln(os.Stderr, "go-purifier: the go command needed a download that go-purifier.lock.json does not hold. Run `go-purifier lock` and commit the lockfile.")
 	}
 	var exit *exec.ExitError
 	if errors.As(err, &exit) && exit.ExitCode() > 0 {
@@ -223,7 +223,7 @@ func interactiveEnv(goBin, dir string, changing bool) ([]string, string, error) 
 		if changing {
 			return nil, "", nil
 		}
-		return nil, "", fmt.Errorf("%s has lock format version %d and this go-purifier reads version %d; run `go-purifier relock` to write it again, or set GO_PURIFIER=0 to run go without it", lockPath, lock.Version, lockFormatVersion)
+		return nil, "", fmt.Errorf("%s has lock format version %d and this go-purifier reads version %d; run `go-purifier lock` to write it again, or set GO_PURIFIER=0 to run go without it", lockPath, lock.Version, lockFormatVersion)
 	}
 	definition, err := definitionHash(root, lock.DefinitionFiles)
 	if err != nil {

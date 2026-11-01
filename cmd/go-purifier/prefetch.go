@@ -42,7 +42,7 @@ func prefetchCommand(args []string) error {
 		return err
 	}
 	if lock.Version != lockFormatVersion {
-		return fmt.Errorf("%s has lock format version %d and this go-purifier reads version %d; run `go-purifier relock`", lockPath, lock.Version, lockFormatVersion)
+		return fmt.Errorf("%s has lock format version %d and this go-purifier reads version %d; run `go-purifier lock`", lockPath, lock.Version, lockFormatVersion)
 	}
 	if current, err := definitionHash(root, lock.DefinitionFiles); err != nil {
 		return err

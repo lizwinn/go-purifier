@@ -159,7 +159,7 @@ let
           fi
           cat "$TMPDIR/go-stderr" >&2
           if grep -q ${lib.escapeShellArg "${proxy}"} "$TMPDIR/go-stderr"; then
-            echo "go-purifier: the go command needed a download that the lockfile does not hold. Run \`go-purifier lock\` at the lock root, or \`go-purifier relock\` when go.mod is unchanged, and commit the lockfile." >&2
+            echo "go-purifier: the go command needed a download that the lockfile does not hold. Run \`go-purifier lock\` at the lock root and commit the lockfile." >&2
           fi
           if grep -q 'replacement directory .* does not exist' "$TMPDIR/go-stderr"; then
             echo "go-purifier: a replace directive points at a directory outside src; set src to a directory that contains it, and modRoot to the lock root inside src." >&2

@@ -14,7 +14,7 @@
 #   external   a source tree with no lockfile, and the lockfile beside it
 #   version    a lockfile of another format version
 #
-# Run it after relocking the hello fixture; CI checks that the committed
+# Run it after locking the hello fixture again; CI checks that the committed
 # fixtures are what it writes.
 set -euo pipefail
 
@@ -26,6 +26,8 @@ copy() {
   rm -rf "${out:?}/$1"
   mkdir -p "$out/$1"
   cp -r "$hello/." "$out/$1/${2:-}"
+  # Leaves out the GC roots that a prefetch of the hello fixture writes.
+  rm -rf "$out/$1/${2:-}/.go-purifier"
 }
 
 # Edits a lockfile with a Python statement on `lock`; with "rehash", also

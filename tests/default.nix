@@ -4,8 +4,9 @@
 # Nix sandbox can run, builds of the fixtures from their lockfiles, each
 # run, the release archives, and the go-purifier packages.
 #
-# conformance-relock, conformance-rebuild and conformance-offline need the
-# network or the Nix daemon, so they are CI jobs of those names
+# conformance-relock, conformance-rebuild, conformance-offline and
+# conformance-update need the network or the Nix daemon, so they are CI
+# jobs of those names
 # (.github/workflows/check.yml).
 {
   pkgs,
@@ -89,10 +90,10 @@ in
       "run `go-purifier lock`";
 
   # A lockfile whose download hash was changed fails at evaluation, since
-  # its contentHash no longer matches, naming `go-purifier relock`.
+  # its contentHash no longer matches, naming `go-purifier lock`.
   conformance-tampered =
     rejects "conformance-tampered" ./fixtures/conformance/tampered ".entries"
-      "contentHash does not match its content; run `go-purifier relock`";
+      "contentHash does not match its content; run `go-purifier lock`";
 
   # A lockfile without a download the build needs: the go command cannot
   # find it in the proxy tree, and the build names `go-purifier lock`.
@@ -105,10 +106,10 @@ in
       '';
 
   # A lockfile that is not JSON fails at evaluation, naming
-  # `go-purifier relock`.
+  # `go-purifier lock`.
   conformance-malformed =
     rejects "conformance-malformed" ./fixtures/conformance/malformed ".entries"
-      "run `go-purifier relock` to write it again";
+      "run `go-purifier lock` to write it again";
 
   # A source tree that holds no go-purifier lockfile builds from one kept
   # outside it.
@@ -227,7 +228,7 @@ in
     }).tests;
 
   # lock.nix rejects a lockfile of another format version, naming
-  # `go-purifier relock`.
+  # `go-purifier lock`.
   lock-version =
     rejects "lock-version" ./fixtures/conformance/version ".entries"
       "has lock format version 99";

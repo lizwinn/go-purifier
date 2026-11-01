@@ -113,8 +113,8 @@ func TestContentHash(t *testing.T) {
 	if err := os.WriteFile(path, []byte(tampered), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readLock(path); err == nil || !strings.Contains(err.Error(), "go-purifier relock") {
-		t.Fatalf("readLock of an edited lockfile = %v; want an error that names go-purifier relock", err)
+	if _, err := readLock(path); err == nil || !strings.Contains(err.Error(), "go-purifier lock") {
+		t.Fatalf("readLock of an edited lockfile = %v; want an error that names go-purifier lock", err)
 	}
 	// The digest is that of the JSON Nix's builtins.toJSON gives the same
 	// value: sorted keys, no whitespace, no HTML escaping.
@@ -181,8 +181,8 @@ func TestInteractiveEnvRejectsMalformedLockfile(t *testing.T) {
 	t.Setenv("GOWORK", "off")
 	writeFiles(t, root, map[string]string{"go.mod": "module example.com/m\n", lockFileName: "{ not json"})
 	_, _, err := interactiveEnv("go", root, false)
-	if err == nil || !strings.Contains(err.Error(), "go-purifier relock") {
-		t.Fatalf("interactiveEnv with a malformed lockfile = %v; want an error that names go-purifier relock", err)
+	if err == nil || !strings.Contains(err.Error(), "go-purifier lock") {
+		t.Fatalf("interactiveEnv with a malformed lockfile = %v; want an error that names go-purifier lock", err)
 	}
 }
 

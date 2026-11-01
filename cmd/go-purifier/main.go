@@ -25,10 +25,12 @@ const usageText = `usage: go-purifier <command> [--lockfile <path>]
 
 Commands:
   lock               write go-purifier.lock.json for the module or
-                     workspace of the current directory, unless the files
-                     that define its dependencies are unchanged since the
-                     last lock
-  relock             write go-purifier.lock.json even if it is current
+                     workspace of the current directory, from go.mod and
+                     go.sum as they are
+  update [<module>...]
+                     update every module the build needs to its latest
+                     version, or only the named modules, with go get and
+                     go mod tidy, then lock
   prefetch           realize the locked downloads and the toolchain in the
                      Nix store, with GC roots in .go-purifier/ at the lock
                      root, so that go and gopls work with no network
@@ -65,9 +67,9 @@ func main() {
 	var err error
 	switch os.Args[1] {
 	case "lock":
-		err = lockCommand(false, os.Args[2:])
-	case "relock":
-		err = lockCommand(true, os.Args[2:])
+		err = lockCommand(os.Args[2:])
+	case "update":
+		err = updateCommand(os.Args[2:])
 	case "prefetch":
 		err = prefetchCommand(os.Args[2:])
 	case "publish":

@@ -21,7 +21,7 @@ let
   # false, since Nix cannot catch an error of builtins.fromJSON.
   read =
     if exists then
-      builtins.addErrorContext "while reading the go-purifier lockfile ${toString lockFile}; when it is damaged, run `go-purifier relock` to write it again" (
+      builtins.addErrorContext "while reading the go-purifier lockfile ${toString lockFile}; when it is damaged, run `go-purifier lock` to write it again" (
         builtins.fromJSON (builtins.readFile lockFile)
       )
     else
@@ -46,15 +46,15 @@ let
       ]
     else if !(builtins.isAttrs read && read ? version) then
       [
-        "go-purifier: ${toString lockFile} is not a go-purifier lockfile; run `go-purifier relock` to write it again"
+        "go-purifier: ${toString lockFile} is not a go-purifier lockfile; run `go-purifier lock` to write it again"
       ]
     else if read.version != supportedVersion then
       [
-        "go-purifier: ${toString lockFile} has lock format version ${toString read.version}; this library reads version ${toString supportedVersion}. Run `go-purifier relock` with the go-purifier revision of this library."
+        "go-purifier: ${toString lockFile} has lock format version ${toString read.version}; this library reads version ${toString supportedVersion}. Run `go-purifier lock` with the go-purifier revision of this library."
       ]
     else if (read.contentHash or null) != contentHash then
       [
-        "go-purifier: ${toString lockFile} was changed after go-purifier wrote it, since its contentHash does not match its content; run `go-purifier relock` to write it again"
+        "go-purifier: ${toString lockFile} was changed after go-purifier wrote it, since its contentHash does not match its content; run `go-purifier lock` to write it again"
       ]
     else
       [ ];

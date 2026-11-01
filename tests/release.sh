@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
 #
-# Checks `go-purifier release` without --push, which builds through Nix
+# Checks `go-purifier publish --dry-run`, which builds through Nix
 # and so cannot run in the Nix sandbox:
 #
 #   tests/release.sh <bin directory of the toolchain package> [work directory]
 #
 # It commits the hello fixture to a new git repository, as a module in a
-# subdirectory, releases v1.0.0 of it, and checks the archives in dist/
-# and the tag.
+# subdirectory, publishes v1.0.0 of it up to the tag, and checks the
+# archives in dist/ and the tag.
 set -euo pipefail
 
 bin=$(cd "${1:?usage: tests/release.sh <bin directory of the toolchain package> [work directory]}" && pwd)
@@ -30,7 +30,7 @@ git -C "$repo" commit -q -m fixture
 
 export XDG_CACHE_HOME="$work/cache" GOPATH="$work/gopath" GOCACHE="$work/gocache" GOMODCACHE="$work/gomod"
 unset GOWORK
-(cd "$repo/hello" && "$bin/go-purifier" release v1.0.0)
+(cd "$repo/hello" && "$bin/go-purifier" publish v1.0.0 --dry-run)
 
 dist="$repo/hello/dist/v1.0.0"
 (cd "$dist" && sha256sum -c SHA256SUMS)

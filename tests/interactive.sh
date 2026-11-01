@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
 #
-# Checks interactive mode, which runs Nix and so cannot run in the Nix
-# sandbox:
+# The conformance-offline check, which runs Nix and so cannot run in the
+# Nix sandbox:
 #
 #   tests/interactive.sh <bin directory of the toolchain package>
 #
-# For each fixture, the go wrapper realizes the lockfile through Nix. The
-# go commands then run with every HTTP proxy variable pointing at a closed
-# port, so any download the go command tried would fail; they read every
-# module from the realized proxy tree. gopls, run the same way, loads the
-# locked modules. The script also checks that a stale lockfile and
-# GO_PURIFIER=0 leave GOPROXY alone, and runs the loop of upgrading a
-# dependency and relocking, which reaches the module proxy.
+# For each fixture, `go-purifier prefetch` realizes the lockfile through
+# Nix. The go commands then run with every HTTP proxy variable pointing at
+# a closed port, so any download the go command tried would fail; they
+# read every module from the realized proxy tree. gopls, run the same way,
+# loads the locked modules. The script also checks that a stale lockfile
+# stops a build with the command to run, that GO_PURIFIER=0 leaves GOPROXY
+# alone, and runs the loop of upgrading a dependency and locking again,
+# which reaches the module proxy.
 set -euo pipefail
 
 bin=$(cd "${1:?usage: tests/interactive.sh <bin directory of the toolchain package>}" && pwd)
@@ -25,10 +26,11 @@ export XDG_CACHE_HOME="$tmp/cache" GOPATH="$tmp/gopath" GOCACHE="$tmp/gocache" G
 export CGO_ENABLED=0 GOFLAGS=-mod=readonly
 unset GOPROXY GONOPROXY GOPRIVATE GOWORK
 
-# Realizes the lockfile of a directory and checks that go reads the proxy
-# tree.
+# Prefetches the lockfile of a directory and checks that go reads the
+# proxy tree.
 realized() {
   local proxy
+  (cd "$1" && "$bin/go-purifier" prefetch)
   proxy=$("$go" -C "$1" env GOPROXY)
   case "$proxy" in
   file://*) ;;
@@ -94,16 +96,19 @@ esac
 
 # The everyday loop of changing a dependency, which reaches the module
 # proxy: go get fetches a version the lockfile does not hold, the next
-# build warns that the lockfile is stale, go-purifier lock renews it, and
-# the build runs offline again.
+# build stops with the command to run, go-purifier lock renews the
+# lockfile, and the build runs offline again.
 cp -r "$fixtures/hello" "$tmp/upgrade"
 chmod -R u+w "$tmp/upgrade"
 "$go" -C "$tmp/upgrade" get github.com/google/uuid@v1.5.0
-warning=$("$go" -C "$tmp/upgrade" env GOPROXY 2>&1 > /dev/null)
-case "$warning" in
-*'until `go-purifier lock` renews it'*) ;;
+if error=$("$go" -C "$tmp/upgrade" build -o "$tmp/upgrade-bin/" ./... 2>&1); then
+  echo "interactive: a build with a stale lockfile succeeded" >&2
+  exit 1
+fi
+case "$error" in
+*'run `go-purifier lock`'*) ;;
 *)
-  echo "interactive: no stale warning after go get: $warning" >&2
+  echo "interactive: a build with a stale lockfile did not name go-purifier lock: $error" >&2
   exit 1
   ;;
 esac
@@ -112,11 +117,7 @@ grep -q 'github.com/google/uuid/@v/v1.5.0.zip' "$tmp/upgrade/go-purifier.lock.js
 realized "$tmp/upgrade"
 offline -C "$tmp/upgrade" build -o "$tmp/upgrade-bin/" ./...
 
-# A stale lockfile, and GO_PURIFIER=0, leave GOPROXY to the user.
-cp -r "$fixtures/hello" "$tmp/stale"
-chmod -R u+w "$tmp/stale"
-echo >> "$tmp/stale/go.sum"
-expect "$(GOPROXY=https://proxy.example "$go" -C "$tmp/stale" env GOPROXY 2>/dev/null)" "https://proxy.example"
+# GO_PURIFIER=0 leaves GOPROXY to the user.
 expect "$(GO_PURIFIER=0 GOPROXY=https://proxy.example "$go" -C "$fixtures/hello" env GOPROXY)" "https://proxy.example"
 
 echo "interactive: all checks passed"

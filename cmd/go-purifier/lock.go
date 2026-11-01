@@ -41,7 +41,7 @@ type Lock struct {
 	// path under this URL.
 	Proxy string `json:"proxy"`
 	// The GONOPROXY patterns of the lock run: the modules it fetched from
-	// version control. A relock reads them again.
+	// version control. The next lock reads them again.
 	NoProxy string `json:"noProxy"`
 	// The files, relative to the lock root, that define the dependencies,
 	// and their digest. A lockfile whose digest differs from the files is
@@ -160,7 +160,11 @@ func (e goEnv) lockRoot() (string, bool, error) {
 	return filepath.Dir(e.GOMOD), false, nil
 }
 
-func lockCommand(force bool, args []string) error {
+// lockCommand writes the lockfile of the module or workspace of the
+// current directory. The lock run keeps the resolution of go.mod and
+// go.sum as they are, and a lock of an unchanged project writes the same
+// lockfile byte for byte.
+func lockCommand(args []string) error {
 	lockFlag, args, err := lockfileFlag(args)
 	if err != nil {
 		return err
@@ -176,7 +180,13 @@ func lockCommand(force bool, args []string) error {
 	if err != nil {
 		return err
 	}
-	env, err := readGoEnv(goBin, cwd)
+	return lockAt(goBin, cwd, lockFlag)
+}
+
+// lockAt locks the module or workspace of directory dir into the lockfile
+// that lockFlag or the lock root names.
+func lockAt(goBin, dir, lockFlag string) error {
+	env, err := readGoEnv(goBin, dir)
 	if err != nil {
 		return err
 	}
@@ -185,14 +195,8 @@ func lockCommand(force bool, args []string) error {
 		return err
 	}
 	lockPath := lockPathAt(root, lockFlag)
-	if existing, err := readLock(lockPath); !force && err == nil && existing.Version == lockFormatVersion {
-		if current, err := definitionHash(root, existing.DefinitionFiles); err == nil && current == existing.DefinitionHash {
-			fmt.Fprintf(os.Stderr, "go-purifier: %s is up to date\n", lockPath)
-			return nil
-		}
-	}
 	proxy := lockProxy(env.GOPROXY)
-	// A relock without GONOPROXY or GOPRIVATE in the environment takes the
+	// A lock without GONOPROXY or GOPRIVATE in the environment takes the
 	// patterns of the previous lockfile (previousNoProxy).
 	noProxy := env.GONOPROXY
 	if noProxy == "" {
@@ -530,15 +534,15 @@ func readLock(path string) (*Lock, error) {
 	}
 	var lock Lock
 	if err := json.Unmarshal(data, &lock); err != nil {
-		return nil, fmt.Errorf("%s is not a go-purifier lockfile (%v); run `go-purifier relock` to write it again", path, err)
+		return nil, fmt.Errorf("%s is not a go-purifier lockfile (%v); run `go-purifier lock` to write it again", path, err)
 	}
 	if lock.Version == lockFormatVersion {
 		want, err := contentHash(data)
 		if err != nil {
-			return nil, fmt.Errorf("%s is not a go-purifier lockfile (%v); run `go-purifier relock` to write it again", path, err)
+			return nil, fmt.Errorf("%s is not a go-purifier lockfile (%v); run `go-purifier lock` to write it again", path, err)
 		}
 		if lock.ContentHash != want {
-			return nil, fmt.Errorf("%s was changed after go-purifier wrote it, since its contentHash does not match its content; run `go-purifier relock` to write it again", path)
+			return nil, fmt.Errorf("%s was changed after go-purifier wrote it, since its contentHash does not match its content; run `go-purifier lock` to write it again", path)
 		}
 	}
 	return &lock, nil

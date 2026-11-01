@@ -134,10 +134,10 @@ GO_PURIFIER=0 "$bin/go" -C "$consumer" mod tidy
 # The module files go-purifier makes from checkouts. Each checkout is made
 # with the commands of the builder of the nixpkgs fetcher for its system,
 # at the revision the go command recorded or encoded in the pseudo-version.
-# The go command then downloads every module from those files, and checks
+# The go command then builds the consumer from those files, and checks
 # each against go.sum.
 field() {
-  python3 -c 'import json, sys; info = json.load(open(sys.argv[1])); print((info.get("Origin") or {}).get(sys.argv[2], "") if sys.argv[2] != "Time" else info["Time"])' "$1" "$2"
+  python3 -c 'import json, sys; info = json.load(open(sys.argv[1])); print((info.get("Origin") or {}).get(sys.argv[2], ""))' "$1" "$2"
 }
 checkouts="$tmp/checkouts" fileproxy="$tmp/fileproxy"
 mkdir -p "$checkouts"
@@ -168,10 +168,12 @@ for name in hgmod svnmod bzrmod fossilmod; do
   esac
   mkdir -p "$fileproxy/example.invalid/$name"
   out="$fileproxy/example.invalid/$name/@v" "$bin/go-purifier" module-files \
-    "$checkouts/$name" "" "example.invalid/$name" "$version" "$(field "$info" Time)"
+    "$checkouts/$name" "" "example.invalid/$name" "$version"
 done
+# A build reads the .mod and .zip files, which go.sum verifies, as the
+# sandboxed build does.
 GO_PURIFIER=0 GOMODCACHE="$tmp/gomod-check" GOPROXY="file://$fileproxy" GONOPROXY=go-purifier.invalid GOSUMDB=off \
-  "$bin/go" -C "$consumer" mod download
+  "$bin/go" -C "$consumer" build -o "$tmp/vcssystems-check" .
 echo "vcs-systems: go.sum verifies the module zips go-purifier makes from hg, svn, bzr and fossil checkouts"
 
 if [ -n "${VCS_SYSTEMS_SKIP_NIX:-}" ]; then
@@ -191,13 +193,10 @@ done
 expected="hgmod svnmod bzrmod fossilmod"
 built=$(nix build --impure --no-link --print-out-paths --expr "
   let
-    flake = builtins.getFlake \"path:$repo\";
-    pkgs = import flake.inputs.nixpkgs {
-      system = builtins.currentSystem;
-      overlays = [ flake.overlays.default ];
-    };
+    flake = builtins.getFlake \"git+file:$repo\";
+    pkgs = import flake.inputs.nixpkgs { system = builtins.currentSystem; };
   in
-  (pkgs.buildGoProject { src = /. + \"$consumer\"; }).packages.vcssystems
+  (flake.lib.go-purifier.buildGoProject { inherit pkgs; src = /. + \"$consumer\"; }).packages.vcssystems
 ")
 if [ "$("$built/bin/vcssystems")" != "$expected" ]; then
   echo "vcs-systems: the Nix build printed $("$built/bin/vcssystems")" >&2

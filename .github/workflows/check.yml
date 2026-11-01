@@ -3,18 +3,31 @@
 # Checks every pull request and every push to main, on x86_64-linux and
 # aarch64-linux.
 #
-# `flake-check` builds the flake's checks: every fixture offline from its
-# lockfile, the release archives, the go-purifier command with its unit
-# tests, the real-world projects, and the formatting.
+# `flake-check` builds the flake's checks: the conformance checks the Nix
+# sandbox can run (stale, tampered, missing, malformed and external), every
+# fixture offline from its lockfile, readLock, the release archives, the
+# go-purifier command with its unit tests, and the formatting.
 #
-# `outside-the-sandbox` runs what needs Nix, servers or the network and so
-# cannot run in the Nix sandbox: interactive mode with gopls and the loop
-# of upgrading a dependency (tests/interactive.sh), the errors of common
-# lockfile mistakes (tests/negative.sh), the release command
-# (tests/release.sh), modules from Mercurial, Subversion, Bazaar and
-# Fossil repositories served on the runner (tests/vcs-systems.sh), and the
-# lock itself, which relocks this repository and every fixture and fails
-# unless each lockfile comes out byte for byte as committed.
+# The conformance checks that need the network or the Nix daemon run as
+# jobs of the same names:
+#
+# - `conformance-relock` locks this repository and every fixture again,
+#   writes the conformance fixtures again, and fails unless every file
+#   comes out byte for byte as committed.
+# - `conformance-rebuild` builds the hello fixture a second time with
+#   `nix build --rebuild`, which fails unless the output is the same.
+# - `conformance-offline` runs `go-purifier prefetch` on each fixture, then
+#   the go command and gopls with no route to the network
+#   (tests/interactive.sh).
+# - `conformance-update` runs `go-purifier update` on a copy of the hello
+#   fixture, and checks that go.mod moved and the lockfile passes the stale
+#   check (tests/update.sh).
+#
+# `outside-the-sandbox` runs the other checks that need Nix, servers or the
+# network: the errors of common lockfile mistakes (tests/negative.sh),
+# `go-purifier publish --dry-run` (tests/release.sh), and modules from
+# Mercurial, Subversion, Bazaar and Fossil repositories served on the
+# runner (tests/vcs-systems.sh).
 name: check
 
 on:
@@ -38,6 +51,70 @@ jobs:
       - name: Build the checks
         run: nix flake check --print-build-logs
 
+  conformance-relock:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+      - name: Build the toolchain
+        run: nix build .#toolchain --out-link toolchain
+      - name: Lock this repository and the fixtures again
+        run: |
+          for dir in . tests/fixtures/hello tests/fixtures/workspace tests/fixtures/replace/app tests/fixtures/vcs; do
+            (cd "$dir" && "$GITHUB_WORKSPACE/toolchain/bin/go-purifier" lock)
+          done
+      - name: Write the conformance fixtures again
+        run: tests/conformance-fixtures.sh
+      - name: Compare with the committed files
+        run: git diff --exit-code && test -z "$(git status --porcelain -- tests)"
+
+  conformance-rebuild:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+      - name: Build the hello fixture twice
+        run: |
+          system=$(nix eval --impure --raw --expr builtins.currentSystem)
+          nix build ".#checks.$system.fixture-hello-build" --no-link
+          nix build ".#checks.$system.fixture-hello-build" --no-link --rebuild
+
+  conformance-offline:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+      - name: Build the toolchain
+        run: nix build .#toolchain --out-link toolchain
+      - name: Prefetch, then work with no network
+        run: tests/interactive.sh toolchain/bin
+
+  conformance-update:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+      - name: Build the toolchain
+        run: nix build .#toolchain --out-link toolchain
+      - name: Update a fixture that pins an old version
+        run: tests/update.sh toolchain/bin
+
   outside-the-sandbox:
     strategy:
       fail-fast: false
@@ -49,18 +126,9 @@ jobs:
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
       - name: Build the toolchain
         run: nix build .#toolchain --out-link toolchain
-      - name: Interactive mode
-        run: tests/interactive.sh toolchain/bin
       - name: Errors of common lockfile mistakes
         run: tests/negative.sh toolchain/bin
-      - name: Release
+      - name: Publish up to the tag
         run: tests/release.sh toolchain/bin
       - name: Modules from Mercurial, Subversion, Bazaar and Fossil
         run: tests/vcs-systems.sh toolchain/bin
-      - name: Relock this repository and the fixtures
-        run: |
-          for dir in . tests/fixtures/hello tests/fixtures/workspace tests/fixtures/replace/app tests/fixtures/vcs; do
-            (cd "$dir" && "$GITHUB_WORKSPACE/toolchain/bin/go-purifier" relock)
-          done
-      - name: Compare with the committed lockfiles
-        run: git diff --exit-code -- '*.lock.json'

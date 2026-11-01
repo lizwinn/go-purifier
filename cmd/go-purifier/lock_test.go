@@ -236,8 +236,8 @@ func TestDefinitionHash(t *testing.T) {
 	}
 }
 
-// A relock keeps the GONOPROXY patterns of a lockfile that fails its
-// checks, since relocking is how such a lockfile is fixed.
+// A lock keeps the GONOPROXY patterns of a lockfile that fails its
+// checks, since locking again is how such a lockfile is fixed.
 func TestPreviousNoProxy(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, lockFileName)
