@@ -99,6 +99,12 @@ then your own `GOPROXY`, so they can add modules the lockfile does not hold
 yet. The next build stops and says to run `go-purifier lock`; after that
 the build reads only the locked downloads again.
 
+The nix-purifiers contract has every command that needs a download
+outside the lockfile stop and name `go-purifier lock`. go-purifier does
+that for builds, tests and runs. A command that changes the dependencies
+downloads through your `GOPROXY` instead, because in Go the command that
+changes `go.mod` is the one that chooses the new versions.
+
 `go-purifier update` updates every module the build needs to its latest
 minor or patch version with `go get -u -t ./...`, then runs `go mod tidy`
 and the lock, so that `go.mod`, `go.sum` and the lockfile change in one
@@ -142,8 +148,11 @@ Every error names the command that fixes it.
 
 The last row is an error of the lock run. A missing download and a
 `replace` directive outside `src` show when the go command runs, so the
-build reports them. `readLock` reports each of the other mistakes as an
-entry of `problems`. A lockfile that is not JSON fails evaluation with
+build reports them. The nix-purifiers contract has an incomplete lockfile
+fail at Nix evaluation. In go-purifier, an incomplete lockfile fails when
+the go command in the build looks for the missing download, because only
+the go command knows which modules a build loads. `readLock` reports each
+of the other mistakes as an entry of `problems`. A lockfile that is not JSON fails evaluation with
 the file named and the command to run, because Nix cannot catch an error
 of `builtins.fromJSON`.
 
@@ -158,9 +167,13 @@ packages the main modules or their tests import. The lock run keeps the
 resolution of `go.mod` as it is, and a lock of an unchanged project
 writes the same lockfile byte for byte. When `go.sum` of a module lacks
 entries and `go.mod` needs no change, the lock first runs `go mod tidy`,
-which adds them and leaves `go.mod` as it is. In a workspace the lock does
-not change `go.sum`, and an incomplete `go.sum` stops it with the go
-command's error.
+which adds them and leaves `go.mod` as it is. The nix-purifiers contract
+has `lock` complete the build tool's lockfile wherever it is incomplete.
+In a workspace, go-purifier leaves `go.sum` as it is, because
+`go mod tidy` acts on one module and can resolve it differently from the
+workspace. An incomplete `go.sum` in a workspace stops the lock with the
+go command's error, which names the `go mod download` command that adds
+the missing entry.
 
 The lockfile holds what Nix needs and `go.mod` and `go.sum` cannot give
 it, since `go.sum` records hashes of module contents and not of the files
