@@ -19,8 +19,8 @@
     # The scope `go-purifier` is the `default` entry of this flake's package
     # overlay registry (pkg-overlays/): the package set applies it by
     # default, and the flake exports it as `pkgOverlays` and as the plain
-    # `overlays.default`. The scope holds the builder, a function, so the
-    # flake lists the packages of the scope under `packages` itself.
+    # `overlays.default`. The flake publishes the derivations of the scope
+    # as its `packages`, below, and leaves out the builder, a function.
     nixpkgs = {
       packages.export.enabled = false;
     };
@@ -35,8 +35,7 @@
   perSystem =
     { pkgs, ... }:
     {
-      packages = {
-        inherit (pkgs.go-purifier) cli toolchain;
+      packages = lib.filterAttrs (_: lib.isDerivation) pkgs.go-purifier // {
         default = pkgs.go-purifier.toolchain;
       };
       devShells.default = pkgs.mkShell {
