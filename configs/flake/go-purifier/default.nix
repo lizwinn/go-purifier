@@ -1,29 +1,24 @@
 # SPDX-License-Identifier: MIT
-{ ... }:
+{ closure-lib, ... }:
 {
-  config,
   inputs,
   lib,
   ...
 }:
 {
 
-  imports = [ inputs.flake-parts.flakeModules.partitions ];
+  imports = [
+    inputs.flake-parts.flakeModules.partitions
+    closure-lib.caisson.modules.flake."purifier/purifier-packages"
+  ];
+
+  # The module purifier-packages publishes the derivations of this scope in
+  # the package set as the `packages` output.
+  purifier.scope = "go-purifier";
 
   debug = false;
-  caisson = {
-    libOverlays.exported = libOverlays: {
-      inherit (libOverlays) default;
-    };
-
-    # The scope `go-purifier` is the `default` entry of this flake's package
-    # overlay registry (pkg-overlays/): the package set applies it by
-    # default, and the flake exports it as `pkgOverlays` and as the plain
-    # `overlays.default`. The flake publishes the derivations of the scope
-    # as its `packages`, below, and leaves out the builder, a function.
-    nixpkgs = {
-      packages.export.enabled = false;
-    };
+  caisson.libOverlays.exported = libOverlays: {
+    inherit (libOverlays) default;
   };
 
   # `nix run github:nix-purifiers/go-purifier -- lock` locks the Go module
@@ -35,9 +30,7 @@
   perSystem =
     { pkgs, ... }:
     {
-      packages = lib.filterAttrs (_: lib.isDerivation) pkgs.go-purifier // {
-        default = pkgs.go-purifier.toolchain;
-      };
+      packages.default = pkgs.go-purifier.toolchain;
       devShells.default = pkgs.mkShell {
         packages = [ pkgs.go-purifier.toolchain ];
       };
