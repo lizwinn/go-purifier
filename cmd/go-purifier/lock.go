@@ -17,9 +17,11 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"golang.org/x/mod/module"
 )
 
-// The lockfile sits next to go.mod.
+// The lockfile sits at the lock root (root.go).
 const lockFileName = "go-purifier.lock.json"
 
 // The lock format version this binary writes and reads. nix/lib/lock-version.nix
@@ -31,22 +33,32 @@ const defaultProxy = "https://proxy.golang.org"
 // Lock is the content of go-purifier.lock.json.
 type Lock struct {
 	Version int `json:"version"`
-	// The path of the main module, from go.mod.
-	Module string `json:"module"`
+	// The paths of the main modules: the module at the lock root, or the
+	// modules of the workspace.
+	Modules []string `json:"modules"`
 	// The go version the lock was made with, such as go1.26.10.
 	GoVersion string `json:"goVersion"`
-	// The module proxy every artifact was downloaded from.
+	// The module proxy every file entry was downloaded from.
 	Proxy string `json:"proxy"`
-	// A digest of go.mod and go.sum. A lockfile whose digest differs from
-	// the module's files is stale.
-	DefinitionHash string `json:"definitionHash"`
-	// The main packages of the module: what a Nix build installs.
+	// The GONOPROXY patterns of the lock run: the modules it fetched from
+	// version control.
+	NoProxy string `json:"noProxy"`
+	// The files, relative to the lock root, that define the dependencies,
+	// and their digest. A lockfile whose digest differs from the files is
+	// stale.
+	DefinitionFiles []string `json:"definitionFiles"`
+	DefinitionHash  string   `json:"definitionHash"`
+	// The main packages of the main modules: what a Nix build installs.
 	Binaries []Binary `json:"binaries"`
-	// Every file the lock run downloaded from the proxy.
+	// Modules that a replace directive points at a local directory.
+	LocalModules []LocalModule `json:"localModules"`
+	// Module versions fetched from version control.
+	VCSModules []VCSModule `json:"vcsModules"`
+	// Every download: proxy files, and checkouts of git repositories.
 	Artifacts []Artifact `json:"artifacts"`
 }
 
-// Binary is a main package of the module.
+// Binary is a main package of a main module.
 type Binary struct {
 	// The command name `go install` gives the package.
 	Name string `json:"name"`
@@ -54,14 +66,69 @@ type Binary struct {
 	Package string `json:"package"`
 }
 
-// Artifact is one downloaded file.
-type Artifact struct {
-	// The file's path in a module proxy, which is also its path under
-	// $GOMODCACHE/cache/download.
+// LocalModule is a module that a replace directive points at a directory.
+type LocalModule struct {
+	Module string `json:"module"`
+	// The directory, relative to the lock root.
 	Path string `json:"path"`
-	URL  string `json:"url"`
-	// The SHA-256 of the file in SRI form.
+}
+
+// Artifact is one download, in the entry shapes the nix-purifiers share:
+// a file entry has URL and Mirrors, and a git entry has Git. Path is its
+// place in the output tree. For a file entry that tree is a module proxy,
+// and Path is the file's proxy path, which is also its path under
+// $GOMODCACHE/cache/download.
+//
+// Mirrors is always empty. Two module proxies serve zips with the same
+// content, which go.sum verifies, but not necessarily the same bytes, so
+// the other proxies in GOPROXY are not mirrors of the lock proxy.
+type Artifact struct {
+	Path    string     `json:"path"`
+	URL     string     `json:"url,omitempty"`
+	Mirrors *[]string  `json:"mirrors,omitempty"`
+	Git     *GitSource `json:"git,omitempty"`
+	// The SHA-256 of a file, or the NAR hash of a checkout, in SRI form.
 	Hash string `json:"hash"`
+}
+
+// GitSource is the repository and revision of a git entry.
+type GitSource struct {
+	URL        string `json:"url"`
+	Rev        string `json:"rev"`
+	Submodules bool   `json:"submodules"`
+}
+
+// goEnv is the go command's view of the user's environment and go env
+// file, read before the lock run replaces both.
+type goEnv struct {
+	GOWORK    string
+	GOMOD     string
+	GOPROXY   string
+	GONOPROXY string
+}
+
+func readGoEnv(goBin, dir string) (goEnv, error) {
+	out, err := goOutput(goBin, dir, os.Environ(), "env", "-json", "GOWORK", "GOMOD", "GOPROXY", "GONOPROXY")
+	if err != nil {
+		return goEnv{}, err
+	}
+	var env goEnv
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		return goEnv{}, fmt.Errorf("reading go env: %w", err)
+	}
+	return env, nil
+}
+
+// lockRoot is the lock root of the go command's environment, and whether
+// it is a workspace.
+func (e goEnv) lockRoot() (string, bool, error) {
+	if e.GOWORK != "" && e.GOWORK != "off" {
+		return filepath.Dir(e.GOWORK), true, nil
+	}
+	if e.GOMOD == "" || e.GOMOD == os.DevNull {
+		return "", false, errors.New("the current directory is not inside a Go module or workspace")
+	}
+	return filepath.Dir(e.GOMOD), false, nil
 }
 
 func lockCommand(force bool) error {
@@ -69,31 +136,38 @@ func lockCommand(force bool) error {
 	if err != nil {
 		return err
 	}
-	root, err := moduleRoot(goBin)
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	env, err := readGoEnv(goBin, cwd)
+	if err != nil {
+		return err
+	}
+	root, workspace, err := env.lockRoot()
 	if err != nil {
 		return err
 	}
 	lockPath := filepath.Join(root, lockFileName)
-	definition, err := definitionHash(root)
-	if err != nil {
-		return err
-	}
-	if !force {
-		if existing, err := readLock(lockPath); err == nil && existing.Version == lockFormatVersion && existing.DefinitionHash == definition {
+	existing, _ := readLock(lockPath)
+	if !force && existing != nil && existing.Version == lockFormatVersion {
+		if current, err := definitionHash(root, existing.DefinitionFiles); err == nil && current == existing.DefinitionHash {
 			fmt.Fprintf(os.Stderr, "go-purifier: %s is up to date\n", lockPath)
 			return nil
 		}
 	}
-	proxy, err := lockProxy(goBin)
-	if err != nil {
-		return err
+	proxy := lockProxy(env.GOPROXY)
+	// A relock without GONOPROXY or GOPRIVATE in the environment keeps the
+	// patterns the lockfile was made with.
+	noProxy := env.GONOPROXY
+	if noProxy == "" && existing != nil {
+		noProxy = existing.NoProxy
 	}
 	fmt.Fprintf(os.Stderr, "go-purifier: locking %s from %s\n", root, proxy)
-	lock, err := makeLock(goBin, root, proxy)
+	lock, err := makeLock(goBin, root, workspace, proxy, noProxy, prefetchGit)
 	if err != nil {
 		return err
 	}
-	lock.DefinitionHash = definition
 	if err := writeLock(lockPath, lock); err != nil {
 		return err
 	}
@@ -105,66 +179,32 @@ func lockCommand(force bool) error {
 	return nil
 }
 
-// moduleRoot is the directory of the main module's go.mod.
-func moduleRoot(goBin string) (string, error) {
-	out, err := goOutput(goBin, "", os.Environ(), "env", "GOMOD")
-	if err != nil {
-		return "", err
-	}
-	gomod := strings.TrimSpace(out)
-	if gomod == "" || gomod == os.DevNull {
-		return "", errors.New("the current directory is not inside a Go module")
-	}
-	return filepath.Dir(gomod), nil
-}
-
-// definitionHash is the SHA-256 of go.mod and go.sum, in SRI form. A
-// missing go.sum and an empty one hash differently.
-func definitionHash(root string) (string, error) {
-	h := sha256.New()
-	for _, name := range []string{"go.mod", "go.sum"} {
-		data, err := os.ReadFile(filepath.Join(root, name))
-		switch {
-		case errors.Is(err, fs.ErrNotExist):
-			fmt.Fprintf(h, "%s\x00absent\x00", name)
-		case err != nil:
-			return "", err
-		default:
-			fmt.Fprintf(h, "%s\x00%d\x00", name, len(data))
-			h.Write(data)
-		}
-	}
-	return sri(h.Sum(nil)), nil
-}
-
 // lockProxy is the proxy a lock downloads from: GO_PURIFIER_PROXY, or the
 // first proxy URL in GOPROXY, or the default proxy. Every download of the
-// lock run goes through this one proxy, so each locked file has a URL.
-func lockProxy(goBin string) (string, error) {
+// lock run outside GONOPROXY goes through this one proxy, so each locked
+// file has a URL.
+func lockProxy(goproxy string) string {
 	if p := os.Getenv("GO_PURIFIER_PROXY"); p != "" {
-		return strings.TrimSuffix(p, "/"), nil
+		return strings.TrimSuffix(p, "/")
 	}
-	out, err := goOutput(goBin, "", os.Environ(), "env", "GOPROXY")
-	if err != nil {
-		return "", err
-	}
-	for _, entry := range strings.FieldsFunc(strings.TrimSpace(out), func(r rune) bool { return r == ',' || r == '|' }) {
+	for _, entry := range strings.FieldsFunc(goproxy, func(r rune) bool { return r == ',' || r == '|' }) {
 		if strings.HasPrefix(entry, "https://") || strings.HasPrefix(entry, "http://") {
-			return strings.TrimSuffix(entry, "/"), nil
+			return strings.TrimSuffix(entry, "/")
 		}
 	}
-	return defaultProxy, nil
+	return defaultProxy
 }
 
 // lockEnv is the environment of the lock run: an empty GOPATH, module
-// cache and build cache under tmp, every module from the one proxy, and
-// none of the user's go env file, which could route modules around the
-// proxy.
-func lockEnv(tmp, proxy string) []string {
+// cache and build cache under tmp, every module outside noProxy from the
+// one proxy, and none of the user's go env file. The modules noProxy
+// matches come from version control and skip the checksum database;
+// go.sum still verifies them.
+func lockEnv(tmp, proxy, noProxy string) []string {
 	drop := map[string]bool{
 		"GOENV": true, "GOPATH": true, "GOMODCACHE": true, "GOCACHE": true, "GOPROXY": true,
-		"GOFLAGS": true, "GOTOOLCHAIN": true, "GOWORK": true, "GOPRIVATE": true,
-		"GONOPROXY": true, "GONOSUMDB": true, "GOINSECURE": true, "GO_PURIFIER": true,
+		"GOFLAGS": true, "GOTOOLCHAIN": true, "GOPRIVATE": true, "GONOPROXY": true,
+		"GONOSUMDB": true, "GOINSECURE": true, "GO_PURIFIER": true,
 	}
 	var env []string
 	for _, kv := range os.Environ() {
@@ -173,7 +213,7 @@ func lockEnv(tmp, proxy string) []string {
 			env = append(env, kv)
 		}
 	}
-	return append(env,
+	env = append(env,
 		"GOENV=off",
 		"GOPATH="+filepath.Join(tmp, "gopath"),
 		"GOMODCACHE="+filepath.Join(tmp, "mod"),
@@ -181,37 +221,66 @@ func lockEnv(tmp, proxy string) []string {
 		"GOPROXY="+proxy,
 		"GOFLAGS=-mod=readonly",
 		"GOTOOLCHAIN=local",
-		"GOWORK=off",
 	)
+	if noProxy != "" {
+		env = append(env, "GONOPROXY="+noProxy, "GONOSUMDB="+noProxy)
+	}
+	return env
+}
+
+// listedModule is an entry of `go list -m -json all`.
+type listedModule struct {
+	Path    string
+	Main    bool
+	Dir     string
+	Replace *struct {
+		Path    string
+		Version string
+		Dir     string
+	}
+}
+
+func decodeModules(out string) ([]listedModule, error) {
+	var mods []listedModule
+	dec := json.NewDecoder(strings.NewReader(out))
+	for {
+		var m listedModule
+		if err := dec.Decode(&m); err == io.EOF {
+			return mods, nil
+		} else if err != nil {
+			return nil, fmt.Errorf("reading go list -m: %w", err)
+		}
+		mods = append(mods, m)
+	}
 }
 
 // makeLock runs the lock: it downloads what building and testing every
-// package of the module needs, then records the downloads.
-func makeLock(goBin, root, proxy string) (*Lock, error) {
+// package of the main modules needs, then records the downloads.
+func makeLock(goBin, root string, workspace bool, proxy, noProxy string, prefetch func(url, rev string) (string, error)) (*Lock, error) {
 	tmp, err := os.MkdirTemp("", "go-purifier-lock-")
 	if err != nil {
 		return nil, err
 	}
-	env := lockEnv(tmp, proxy)
+	env := lockEnv(tmp, proxy, noProxy)
 	defer removeModCache(goBin, root, env, tmp)
 
-	module, err := goOutput(goBin, root, env, "list", "-m")
-	if err != nil {
-		return nil, err
-	}
 	goVersion, err := goOutput(goBin, root, env, "env", "GOVERSION")
 	if err != nil {
 		return nil, err
 	}
-	// The module graph and the modules go.mod requires.
-	if err := goRun(goBin, root, env, "mod", "download"); err != nil {
+	// The module graph, which downloads the go.mod file of every module in
+	// it.
+	listed, err := goOutput(goBin, root, env, "list", "-m", "-json", "all")
+	if err != nil {
 		return nil, err
 	}
-	// Every package that building or testing the module's packages loads.
-	if _, err := goOutput(goBin, root, env, "list", "-deps", "-test", "./..."); err != nil {
+	mods, err := decodeModules(listed)
+	if err != nil {
 		return nil, err
 	}
-	mains, err := goOutput(goBin, root, env, "list", "-f", `{{if eq .Name "main"}}{{.ImportPath}}{{end}}`, "./...")
+	// Every package of the main modules and every package they and their
+	// tests import, which downloads the module of each.
+	mains, err := goOutput(goBin, root, env, "list", "-f", `{{if and (eq .Name "main") .Module .Module.Main}}{{.ImportPath}}{{end}}`, "all")
 	if err != nil {
 		return nil, err
 	}
@@ -219,18 +288,54 @@ func makeLock(goBin, root, proxy string) (*Lock, error) {
 	if err != nil {
 		return nil, err
 	}
-	artifacts, err := collectArtifacts(filepath.Join(tmp, "mod", "cache", "download"), proxy)
+
+	lock := &Lock{
+		Version:      lockFormatVersion,
+		Modules:      []string{},
+		GoVersion:    strings.TrimSpace(goVersion),
+		Proxy:        proxy,
+		NoProxy:      noProxy,
+		Binaries:     binaries,
+		LocalModules: []LocalModule{},
+	}
+	var dirs []string
+	for _, m := range mods {
+		switch {
+		case m.Main:
+			lock.Modules = append(lock.Modules, m.Path)
+			dirs = append(dirs, m.Dir)
+		case m.Replace != nil && m.Replace.Version == "":
+			rel, err := filepath.Rel(root, m.Replace.Dir)
+			if err != nil {
+				return nil, err
+			}
+			lock.LocalModules = append(lock.LocalModules, LocalModule{Module: m.Path, Path: filepath.ToSlash(rel)})
+			dirs = append(dirs, m.Replace.Dir)
+		}
+	}
+	sort.Strings(lock.Modules)
+	if lock.DefinitionFiles, err = definitionFiles(root, workspace, dirs); err != nil {
+		return nil, err
+	}
+	if lock.DefinitionHash, err = definitionHash(root, lock.DefinitionFiles); err != nil {
+		return nil, err
+	}
+
+	cacheDir := filepath.Join(tmp, "mod", "cache", "download")
+	files, err := collectArtifacts(cacheDir, proxy, noProxy)
 	if err != nil {
 		return nil, err
 	}
-	return &Lock{
-		Version:   lockFormatVersion,
-		Module:    strings.TrimSpace(module),
-		GoVersion: strings.TrimSpace(goVersion),
-		Proxy:     proxy,
-		Binaries:  binaries,
-		Artifacts: artifacts,
-	}, nil
+	vcs, checkouts, err := vcsModules(cacheDir, noProxy, prefetch)
+	if err != nil {
+		return nil, err
+	}
+	lock.VCSModules = vcs
+	lock.Artifacts = append(checkouts, files...)
+	if lock.Artifacts == nil {
+		lock.Artifacts = []Artifact{}
+	}
+	return lock, nil
 }
 
 var majorVersionElem = regexp.MustCompile(`^v[0-9]+$`)
@@ -280,11 +385,12 @@ func lockable(rel string) bool {
 	return false
 }
 
-// collectArtifacts lists the lockable files of a module download cache.
-// The download cache has the layout of a module proxy, so a file's path in
-// it is also its path under the proxy URL. The checksum database's tiles
+// collectArtifacts lists the lockable files of a module download cache
+// that came from the proxy: those of modules noProxy does not match. The
+// download cache has the layout of a module proxy, so a file's path in it
+// is also its path under the proxy URL. The checksum database's tiles
 // (sumdb/) are left out: a build from the lockfile does not consult it.
-func collectArtifacts(dir, proxy string) ([]Artifact, error) {
+func collectArtifacts(dir, proxy, noProxy string) ([]Artifact, error) {
 	artifacts := []Artifact{}
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -307,11 +413,21 @@ func collectArtifacts(dir, proxy string) ([]Artifact, error) {
 		if !lockable(rel) {
 			return nil
 		}
+		if noProxy != "" {
+			escaped, _, _ := splitProxyPath(rel)
+			modPath, err := module.UnescapePath(escaped)
+			if err != nil {
+				return fmt.Errorf("%s: %w", rel, err)
+			}
+			if module.MatchPrefixPatterns(noProxy, modPath) {
+				return nil
+			}
+		}
 		hash, err := fileHash(p)
 		if err != nil {
 			return err
 		}
-		artifacts = append(artifacts, Artifact{Path: rel, URL: proxy + "/" + rel, Hash: hash})
+		artifacts = append(artifacts, Artifact{Path: rel, URL: proxy + "/" + rel, Mirrors: &[]string{}, Hash: hash})
 		return nil
 	})
 	if err != nil {

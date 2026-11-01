@@ -1,28 +1,50 @@
 # SPDX-License-Identifier: MIT
 #
-# The fetcher for locked artifacts.
+# The fetcher for locked entries. A file entry
+# ({ path, url, mirrors, hash }) is a proxy file; a git entry
+# ({ path, git = { url, rev, submodules }, hash }) is a checkout of a
+# repository.
 #
-# By default each artifact is a fixed-output derivation on Nix's built-in
-# fetcher (the same derivation <nix/fetchurl.nix> makes), so neither the go
-# wrapper nor a sandboxed build needs nixpkgs to download. A fixed-output
-# store path depends only on its name and hash, so the default fetcher and
-# nixpkgs' fetchurl produce the same paths.
+# By default a file is a fixed-output derivation on Nix's built-in fetcher
+# (the same derivation <nix/fetchurl.nix> makes), and a checkout is
+# builtins.fetchGit, so neither the go wrapper nor a sandboxed build needs
+# nixpkgs to download. A file's store path depends only on its name and
+# hash, so the default fetcher and nixpkgs' fetchurl produce the same
+# paths.
 #
-# `fetchurl`, when given, replaces the built-in fetcher. It is called with
-# { name, url, hash } and is the place for credentials (nixpkgs' fetchurl
-# takes `netrcPhase`) or mirrors.
+# `fetchurl` and `fetchgit`, when given, replace the defaults. fetchurl is
+# called with { name, urls, hash }, and is the place for credentials
+# (nixpkgs' fetchurl takes `netrcPhase`) or mirrors. fetchgit is called
+# with { name, url, rev, hash, fetchSubmodules }; nixpkgs' fetchgit
+# checks the same NAR hash nix-prefetch-git reports.
 {
   lock,
   fetchurl ? null,
+  fetchgit ? null,
 }:
 artifact:
 let
   name = lock.artifactName artifact;
 in
-if fetchurl != null then
+if artifact ? git then
+  if fetchgit != null then
+    fetchgit {
+      inherit name;
+      inherit (artifact.git) url rev;
+      inherit (artifact) hash;
+      fetchSubmodules = artifact.git.submodules;
+    }
+  else
+    builtins.fetchGit {
+      inherit (artifact.git) url rev submodules;
+      narHash = artifact.hash;
+      allRefs = true;
+    }
+else if fetchurl != null then
   fetchurl {
     inherit name;
-    inherit (artifact) url hash;
+    urls = [ artifact.url ] ++ artifact.mirrors or [ ];
+    inherit (artifact) hash;
   }
 else
   derivation {
@@ -30,7 +52,7 @@ else
     builder = "builtin:fetchurl";
     system = "builtin";
     inherit (artifact) url;
-    urls = [ artifact.url ];
+    urls = [ artifact.url ] ++ artifact.mirrors or [ ];
     outputHash = artifact.hash;
     outputHashAlgo = "sha256";
     outputHashMode = "flat";

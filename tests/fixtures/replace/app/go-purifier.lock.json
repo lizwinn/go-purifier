@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "modules": [
+    "example.com/replaceapp"
+  ],
+  "goVersion": "go1.26.10",
+  "proxy": "https://proxy.golang.org",
+  "noProxy": "",
+  "definitionFiles": [
+    "../greeter/go.mod",
+    "../greeter/go.sum",
+    "go.mod",
+    "go.sum"
+  ],
+  "definitionHash": "sha256-GpfXYUQjt+H5r6Tfgije89QMT5KVAp3veJ2lLW6H9Bc=",
+  "binaries": [
+    {
+      "name": "replaceapp",
+      "package": "example.com/replaceapp"
+    }
+  ],
+  "localModules": [
+    {
+      "module": "example.com/greeter",
+      "path": "../greeter"
+    }
+  ],
+  "vcsModules": [],
+  "artifacts": [
+    {
+      "path": "github.com/google/uuid/@v/v1.6.0.mod",
+      "url": "https://proxy.golang.org/github.com/google/uuid/@v/v1.6.0.mod",
+      "mirrors": [],
+      "hash": "sha256-c9pHtjOLAKCC/UUao1oyc9OtwJuOm7qY2rAQkeQCr24="
+    },
+    {
+      "path": "github.com/google/uuid/@v/v1.6.0.zip",
+      "url": "https://proxy.golang.org/github.com/google/uuid/@v/v1.6.0.zip",
+      "mirrors": [],
+      "hash": "sha256-0PAvN3IX9CcC4lloTgZEHtv1FA3dzDS6m+pWA4s4pu0="
+    }
+  ]
+}

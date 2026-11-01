@@ -9,6 +9,19 @@ import (
 	"testing"
 )
 
+func writeFiles(t *testing.T, dir string, files map[string]string) {
+	t.Helper()
+	for rel, content := range files {
+		p := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestBinaryName(t *testing.T) {
 	cases := map[string]string{
 		"example.com/hello":            "hello",
@@ -50,35 +63,29 @@ func TestLockable(t *testing.T) {
 
 func TestCollectArtifacts(t *testing.T) {
 	dir := t.TempDir()
-	files := map[string]string{
+	writeFiles(t, dir, map[string]string{
 		"github.com/!burnt!sushi/toml/@v/v1.3.2.mod": "module github.com/BurntSushi/toml\n",
 		"github.com/!burnt!sushi/toml/@v/v1.3.2.zip": "zip",
 		"github.com/!burnt!sushi/toml/@v/list":       "v1.3.2\n",
+		"example.com/private/@v/v1.0.0.mod":          "module example.com/private\n",
 		"sumdb/sum.golang.org/lookup/x":              "tile",
-	}
-	for rel, content := range files {
-		p := filepath.Join(dir, filepath.FromSlash(rel))
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	got, err := collectArtifacts(dir, "https://proxy.example")
+	})
+	got, err := collectArtifacts(dir, "https://proxy.example", "example.com/private")
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []Artifact{
 		{
-			Path: "github.com/!burnt!sushi/toml/@v/v1.3.2.mod",
-			URL:  "https://proxy.example/github.com/!burnt!sushi/toml/@v/v1.3.2.mod",
-			Hash: "sha256-KAIbQYClnDmTYHqVsY4jDdC8a+pSQv/o6ou/tPT3tNc=",
+			Path:    "github.com/!burnt!sushi/toml/@v/v1.3.2.mod",
+			URL:     "https://proxy.example/github.com/!burnt!sushi/toml/@v/v1.3.2.mod",
+			Mirrors: &[]string{},
+			Hash:    "sha256-KAIbQYClnDmTYHqVsY4jDdC8a+pSQv/o6ou/tPT3tNc=",
 		},
 		{
-			Path: "github.com/!burnt!sushi/toml/@v/v1.3.2.zip",
-			URL:  "https://proxy.example/github.com/!burnt!sushi/toml/@v/v1.3.2.zip",
-			Hash: "sha256-SnD+mqZDbgLC3qNA+9HjUuTvLYzmylKtJdS5VHH8i/I=",
+			Path:    "github.com/!burnt!sushi/toml/@v/v1.3.2.zip",
+			URL:     "https://proxy.example/github.com/!burnt!sushi/toml/@v/v1.3.2.zip",
+			Mirrors: &[]string{},
+			Hash:    "sha256-SnD+mqZDbgLC3qNA+9HjUuTvLYzmylKtJdS5VHH8i/I=",
 		},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -87,7 +94,7 @@ func TestCollectArtifacts(t *testing.T) {
 }
 
 func TestCollectArtifactsOfMissingCache(t *testing.T) {
-	got, err := collectArtifacts(filepath.Join(t.TempDir(), "absent"), "https://proxy.example")
+	got, err := collectArtifacts(filepath.Join(t.TempDir(), "absent"), "https://proxy.example", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,32 +103,104 @@ func TestCollectArtifactsOfMissingCache(t *testing.T) {
 	}
 }
 
-func TestDefinitionHash(t *testing.T) {
+func TestVCSModules(t *testing.T) {
 	dir := t.TempDir()
-	write := func(name, content string) {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
+	writeFiles(t, dir, map[string]string{
+		"example.com/!private/@v/v1.0.0.info":     `{"Version":"v1.0.0","Time":"2024-01-02T03:04:05Z","Origin":{"VCS":"git","URL":"https://git.example/private","Hash":"0123456789abcdef0123456789abcdef01234567","Ref":"refs/tags/v1.0.0"}}`,
+		"example.com/!private/sub/@v/v0.1.0.info": `{"Version":"v0.1.0","Time":"2024-01-02T03:04:05Z","Origin":{"VCS":"git","URL":"https://git.example/private","Subdir":"sub","Hash":"0123456789abcdef0123456789abcdef01234567"}}`,
+		"example.com/public/@v/v1.0.0.info":       `{"Version":"v1.0.0","Time":"2024-01-02T03:04:05Z"}`,
+	})
+	prefetches := 0
+	prefetch := func(url, rev string) (string, error) {
+		prefetches++
+		return "sha256-checkout", nil
 	}
-	write("go.mod", "module example.com/m\n")
-	withoutSum, err := definitionHash(dir)
+	mods, checkouts, err := vcsModules(dir, "example.com/Private", prefetch)
 	if err != nil {
 		t.Fatal(err)
 	}
-	write("go.sum", "")
-	withEmptySum, err := definitionHash(dir)
+	if prefetches != 1 || len(checkouts) != 1 {
+		t.Fatalf("two modules of one revision were prefetched %d times into %d entries", prefetches, len(checkouts))
+	}
+	entry := checkouts[0]
+	if entry.Git == nil || entry.Git.URL != "https://git.example/private" || entry.Git.Rev != "0123456789abcdef0123456789abcdef01234567" || entry.Git.Submodules || entry.Hash != "sha256-checkout" {
+		t.Errorf("git entry = %#v", entry)
+	}
+	want := []VCSModule{
+		{Module: "example.com/Private", Version: "v1.0.0", ProxyDir: "example.com/!private/@v", Time: "2024-01-02T03:04:05Z", Entry: entry.Path},
+		{Module: "example.com/Private/sub", Version: "v0.1.0", ProxyDir: "example.com/!private/sub/@v", Time: "2024-01-02T03:04:05Z", Entry: entry.Path, Subdir: "sub"},
+	}
+	if !reflect.DeepEqual(mods, want) {
+		t.Errorf("vcsModules = %#v, want %#v", mods, want)
+	}
+}
+
+func TestHTTPSURL(t *testing.T) {
+	cases := map[string]string{
+		"git@github.com:org/repo.git":        "https://github.com/org/repo.git",
+		"ssh://git@github.com/org/repo":      "https://github.com/org/repo",
+		"ssh://git@git.example:2222/org/rep": "https://git.example/org/rep",
+		"https://github.com/org/repo":        "https://github.com/org/repo",
+		"file:///srv/git/repo":               "file:///srv/git/repo",
+	}
+	for in, want := range cases {
+		if got := httpsURL(in); got != want {
+			t.Errorf("httpsURL(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestVCSModulesRejectsOtherVCS(t *testing.T) {
+	dir := t.TempDir()
+	writeFiles(t, dir, map[string]string{
+		"example.com/hg/@v/v1.0.0.info": `{"Version":"v1.0.0","Origin":{"VCS":"hg","URL":"https://hg.example/hg","Hash":"abc"}}`,
+	})
+	if _, _, err := vcsModules(dir, "example.com/hg", func(string, string) (string, error) { return "", nil }); err == nil {
+		t.Error("a module from a Mercurial repository was locked")
+	}
+}
+
+func TestDefinitionHash(t *testing.T) {
+	dir := t.TempDir()
+	files := []string{"go.mod", "go.sum"}
+	writeFiles(t, dir, map[string]string{"go.mod": "module example.com/m\n"})
+	withoutSum, err := definitionHash(dir, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFiles(t, dir, map[string]string{"go.sum": ""})
+	withEmptySum, err := definitionHash(dir, files)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if withoutSum == withEmptySum {
 		t.Error("a missing go.sum and an empty one have the same definition hash")
 	}
-	write("go.mod", "module example.com/m\n\ngo 1.24\n")
-	changed, err := definitionHash(dir)
+	writeFiles(t, dir, map[string]string{"go.mod": "module example.com/m\n\ngo 1.24\n"})
+	changed, err := definitionHash(dir, files)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if changed == withEmptySum {
 		t.Error("changing go.mod left the definition hash unchanged")
+	}
+	reordered, err := definitionHash(dir, []string{"go.sum", "go.mod"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reordered != changed {
+		t.Error("the definition hash depends on the order of the files")
+	}
+}
+
+func TestDefinitionFiles(t *testing.T) {
+	root := "/w"
+	got, err := definitionFiles(root, true, []string{"/w/app", "/w/lib", "/lib2", "/w/app"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"../lib2/go.mod", "../lib2/go.sum", "app/go.mod", "app/go.sum", "go.work", "go.work.sum", "lib/go.mod", "lib/go.sum"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("definitionFiles = %q, want %q", got, want)
 	}
 }

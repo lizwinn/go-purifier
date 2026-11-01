@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MIT
 
-// Command go-purifier makes Nix the dependency backend of a Go module.
+// Command go-purifier makes Nix the dependency backend of a Go build.
 //
-// `go-purifier lock` runs the module's build once with an empty module
-// cache and records every file the go command downloads from the module
-// proxy in go-purifier.lock.json, next to go.mod. The Nix library of this
-// repository (nix/lib) builds the module from that lockfile in the Nix
-// sandbox, offline.
+// `go-purifier lock` runs the build once with an empty module cache and
+// records every file the go command downloads in go-purifier.lock.json,
+// next to go.mod, or next to go.work for a workspace. The Nix library of
+// this repository (nix/lib) builds from that lockfile in the Nix sandbox,
+// offline.
 //
-// Invoked as `go` (the flake's `go` package links it under that name),
-// the same binary runs the real go command. When the module has a current
-// lockfile, it first realizes the locked files through Nix and points
-// GOPROXY at them, so interactive builds resolve offline from exactly the
-// files the Nix build uses.
+// Invoked as `go` (the flake's `toolchain` package links it under that
+// name), the same binary runs the real go command. When the build has a
+// current lockfile, it first realizes the locked files through Nix and
+// points GOPROXY at them, so interactive builds resolve offline from
+// exactly the files the Nix build uses.
 package main
 
 import (
@@ -24,12 +24,17 @@ import (
 const usageText = `usage: go-purifier <command>
 
 Commands:
-  lock     write go-purifier.lock.json for the module in the current
-           directory, unless go.mod and go.sum are unchanged since the
-           last lock
-  relock   write go-purifier.lock.json even if it is current
-  go ...   run the go command against the locked downloads; the same as
-           invoking this binary as "go"
+  lock               write go-purifier.lock.json for the module or
+                     workspace of the current directory, unless the files
+                     that define its dependencies are unchanged since the
+                     last lock
+  relock             write go-purifier.lock.json even if it is current
+  release <version>  build the release archives of the module's commands
+                     through Nix, and tag the release; with --push, also
+                     push the tag, create a GitHub release and ask the
+                     module proxy for the version
+  go ...             run the go command against the locked downloads; the
+                     same as invoking this binary as "go"
 
 Environment:
   GO_PURIFIER_GO       the go command to run (the flake's wrapper sets it)
@@ -38,6 +43,7 @@ Environment:
   GO_PURIFIER_PROXY    the module proxy a lock downloads from; the default
                        is the first proxy URL in GOPROXY, or
                        https://proxy.golang.org
+  GONOPROXY, GOPRIVATE the modules a lock fetches from version control
   GO_PURIFIER=0        run go without the locked downloads
 `
 
@@ -55,8 +61,16 @@ func main() {
 		err = lockCommand(false)
 	case "relock":
 		err = lockCommand(true)
+	case "release":
+		err = releaseCommand(os.Args[2:])
 	case "go":
 		os.Exit(runGo(os.Args[2:]))
+	// The builders of the Nix derivations nix/lib makes; see vcs.go and
+	// wrapper.go.
+	case "module-files":
+		err = moduleFilesCommand(os.Args[2:])
+	case "link-tree":
+		err = linkTreeCommand()
 	case "help", "-h", "--help":
 		fmt.Print(usageText)
 		return

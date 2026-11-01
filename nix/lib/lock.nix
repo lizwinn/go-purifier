@@ -11,7 +11,7 @@ let
 
   supportedVersion = import ./lock-version.nix;
 
-  # A store path name from a proxy path. Store path names allow
+  # A store path name from a tree path. Store path names allow
   # [A-Za-z0-9+._?=-], must not start with a dot, and are at most 211
   # characters; every other character becomes "_", and a long name keeps
   # its end, where the version and the file type are. The go wrapper and
@@ -38,6 +38,16 @@ lock
 // {
   inherit storeName;
 
-  # The fetch name of an artifact: its proxy path, made a valid store name.
+  # The fetch name of an entry: its tree path, made a valid store name.
   artifactName = artifact: storeName artifact.path;
+
+  # The file entries, which are proxy files, and the git entries, which
+  # are checkouts of the repositories of modules from version control.
+  files = builtins.filter (a: a ? url) lock.artifacts;
+  checkouts = builtins.listToAttrs (
+    map (a: {
+      name = a.path;
+      value = a;
+    }) (builtins.filter (a: a ? git) lock.artifacts)
+  );
 }

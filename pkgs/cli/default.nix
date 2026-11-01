@@ -7,6 +7,7 @@ let
       inherit root;
       fileset = lib.fileset.unions [
         (root + "/go.mod")
+        (root + "/go.sum")
         (root + "/go-purifier.lock.json")
         (lib.fileset.fileFilter (file: file.hasExt "go") (root + "/cmd"))
       ];

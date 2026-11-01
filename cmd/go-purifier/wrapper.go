@@ -3,10 +3,10 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -40,7 +40,7 @@ func realGo() (string, error) {
 }
 
 // runGo runs the real go command, with GOPROXY pointing at the locked
-// downloads when the module has a current lockfile.
+// downloads when the build has a current lockfile.
 func runGo(args []string) int {
 	goBin, err := realGo()
 	if err != nil {
@@ -91,27 +91,17 @@ func workingDir(args []string) (string, error) {
 	return dir, nil
 }
 
-// findModuleRoot is the nearest directory at or above dir that holds a
-// go.mod.
-func findModuleRoot(dir string) (string, bool) {
-	for {
-		if info, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil && !info.IsDir() {
-			return dir, true
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", false
-		}
-		dir = parent
-	}
-}
+// noProxyMatchesNothing is a GONOPROXY pattern that matches no module. It
+// keeps GOPRIVATE, which GONOPROXY defaults to, from sending the go command
+// past the locked downloads to version control.
+const noProxyMatchesNothing = "go-purifier.invalid"
 
 // interactiveEnv is what the go command's environment gains when it runs
-// in dir, inside a module with a current lockfile: the locked downloads as
-// its only proxy. A module without a lockfile, or with a stale one,
+// in dir, inside a build with a current lockfile: the locked downloads as
+// its only proxy. A build without a lockfile, or with a stale one,
 // resolves the usual way.
 func interactiveEnv(dir string) ([]string, error) {
-	root, ok := findModuleRoot(dir)
+	root, ok := findLockRoot(dir)
 	if !ok {
 		return nil, nil
 	}
@@ -127,12 +117,12 @@ func interactiveEnv(dir string) ([]string, error) {
 		fmt.Fprintf(os.Stderr, "go-purifier: %s has lock format version %d and this go-purifier reads version %d; resolving the usual way until `go-purifier relock` renews it\n", lockPath, lock.Version, lockFormatVersion)
 		return nil, nil
 	}
-	definition, err := definitionHash(root)
+	definition, err := definitionHash(root, lock.DefinitionFiles)
 	if err != nil {
 		return nil, err
 	}
 	if lock.DefinitionHash != definition {
-		fmt.Fprintf(os.Stderr, "go-purifier: go.mod or go.sum changed since %s was written; resolving the usual way until `go-purifier lock` renews it\n", lockPath)
+		fmt.Fprintf(os.Stderr, "go-purifier: the module definitions changed since %s was written; resolving the usual way until `go-purifier lock` renews it\n", lockPath)
 		return nil, nil
 	}
 	proxyDir, err := realize(root, lockPath)
@@ -141,19 +131,21 @@ func interactiveEnv(dir string) ([]string, error) {
 	}
 	return []string{
 		"GOPROXY=file://" + proxyDir,
-		// The lockfile pins every file by hash, and go.sum still holds the
-		// module checksums; the checksum database is not reachable offline.
+		"GONOPROXY=" + noProxyMatchesNothing,
+		// The lockfile pins every download by hash, and go.sum still holds
+		// the module checksums; the checksum database is not reachable
+		// offline.
 		"GOSUMDB=off",
 		"GOTOOLCHAIN=local",
 	}, nil
 }
 
-// realize makes the locked downloads available under a per-module
-// directory of the user cache directory and returns the proxy tree there.
-// Nix fetches each locked file into the store; a manifest in the store,
-// held by a GC root next to the tree, maps each proxy path to its store
-// path; and the tree is a directory of links into the store. A tree made
-// from the same lockfile content is reused.
+// realize builds the proxy tree of a lockfile through Nix and returns the
+// path of a GC root that links to it, under a per-build directory of the
+// user cache directory. Nix fetches every locked download in parallel,
+// makes the files of modules from version control, and links them into
+// one tree in the store. A tree built from the same lockfile content is
+// reused.
 func realize(root, lockPath string) (string, error) {
 	cache, err := os.UserCacheDir()
 	if err != nil {
@@ -161,7 +153,7 @@ func realize(root, lockPath string) (string, error) {
 	}
 	rootSum := sha256.Sum256([]byte(root))
 	dir := filepath.Join(cache, "go-purifier", hex.EncodeToString(rootSum[:8]))
-	proxyDir := filepath.Join(dir, "proxy")
+	proxyLink := filepath.Join(dir, "proxy")
 	stampPath := filepath.Join(dir, "stamp")
 
 	content, err := os.ReadFile(lockPath)
@@ -171,70 +163,70 @@ func realize(root, lockPath string) (string, error) {
 	contentSum := sha256.Sum256(content)
 	stamp := hex.EncodeToString(contentSum[:])
 	if old, err := os.ReadFile(stampPath); err == nil && string(old) == stamp {
-		if _, err := os.Stat(proxyDir); err == nil {
-			return proxyDir, nil
+		if _, err := os.Stat(proxyLink); err == nil {
+			return proxyLink, nil
 		}
 	}
 
 	nixLib := os.Getenv("GO_PURIFIER_NIX_LIB")
 	if nixLib == "" {
-		return "", errors.New("GO_PURIFIER_NIX_LIB is not set; run go through the go-purifier flake (`nix develop` or `nix shell` of its `go` package), or set GO_PURIFIER=0")
+		return "", errors.New("GO_PURIFIER_NIX_LIB is not set; run go through the go-purifier flake (`nix develop` or `nix shell` of its `toolchain` package), or set GO_PURIFIER=0")
+	}
+	self, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	if self, err = filepath.EvalSymlinks(self); err != nil {
+		return "", err
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	expr := filepath.Join(nixLib, "realize.nix")
-	args := []string{expr, "--argstr", "lockFile", lockPath}
-
 	fmt.Fprintf(os.Stderr, "go-purifier: realizing %s through Nix\n", lockPath)
-	// nix-build of an attribute set builds every derivation in it, so the
-	// downloads run in parallel.
-	if err := run("nix-build", append([]string{"--no-out-link", "--quiet", "-A", "fetches"}, args...)...); err != nil {
-		return "", err
-	}
-	manifestJSON, err := output("nix-instantiate", append([]string{"--eval", "--strict", "--json", "--read-write-mode", "-A", "manifest"}, args...)...)
-	if err != nil {
-		return "", err
-	}
-	var manifestPath string
-	if err := json.Unmarshal([]byte(manifestJSON), &manifestPath); err != nil {
-		return "", fmt.Errorf("reading the manifest path from nix-instantiate: %w", err)
-	}
-	if _, err := output("nix-store", "--add-root", filepath.Join(dir, "gcroot"), "--realise", manifestPath); err != nil {
-		return "", err
-	}
-	manifestData, err := os.ReadFile(manifestPath)
-	if err != nil {
-		return "", err
-	}
-	var manifest map[string]string
-	if err := json.Unmarshal(manifestData, &manifest); err != nil {
-		return "", fmt.Errorf("%s: %w", manifestPath, err)
-	}
-
-	tmpDir, err := os.MkdirTemp(dir, "proxy-")
-	if err != nil {
-		return "", err
-	}
-	for rel, target := range manifest {
-		link := filepath.Join(tmpDir, filepath.FromSlash(rel))
-		if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
-			return "", err
-		}
-		if err := os.Symlink(target, link); err != nil {
-			return "", err
-		}
-	}
-	if err := os.RemoveAll(proxyDir); err != nil {
-		return "", err
-	}
-	if err := os.Rename(tmpDir, proxyDir); err != nil {
+	if err := run("nix-build", filepath.Join(nixLib, "realize.nix"),
+		"--argstr", "lockFile", lockPath,
+		"--argstr", "cli", self,
+		"--out-link", proxyLink, "--quiet"); err != nil {
 		return "", err
 	}
 	if err := os.WriteFile(stampPath, []byte(stamp), 0o644); err != nil {
 		return "", err
 	}
-	return proxyDir, nil
+	return proxyLink, nil
+}
+
+// linkTreeCommand is the builder of the proxy tree that interactive mode
+// realizes. The file $manifestPath holds a line of a tree path, a tab, and
+// a store path per entry; the builder makes $out a directory with a link
+// to each store path at its tree path.
+func linkTreeCommand() error {
+	out, manifestPath := os.Getenv("out"), os.Getenv("manifestPath")
+	if out == "" || manifestPath == "" {
+		return errors.New("link-tree builds $out from $manifestPath, and one of them is not set")
+	}
+	f, err := os.Open(manifestPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		return err
+	}
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		rel, target, ok := strings.Cut(scanner.Text(), "\t")
+		if !ok {
+			continue
+		}
+		link := filepath.Join(out, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+			return err
+		}
+		if err := os.Symlink(target, link); err != nil {
+			return err
+		}
+	}
+	return scanner.Err()
 }
 
 func run(name string, args ...string) error {
@@ -247,13 +239,14 @@ func run(name string, args ...string) error {
 	return nil
 }
 
-func output(name string, args ...string) (string, error) {
+func output(dir, name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
 	}
-	return stdout.String(), nil
+	return strings.TrimSpace(stdout.String()), nil
 }
