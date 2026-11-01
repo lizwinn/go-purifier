@@ -214,7 +214,8 @@ file://*) ;;
   exit 1
   ;;
 esac
-rm -rf "$GOMODCACHE"
+# The go command makes the module cache read-only.
+chmod -R u+w "$GOMODCACHE" && rm -rf "$GOMODCACHE"
 interactive=$(HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9 "$bin/go" -C "$consumer" run .)
 if [ "$interactive" != "$expected" ]; then
   echo "vcs-systems: go run printed $interactive" >&2
