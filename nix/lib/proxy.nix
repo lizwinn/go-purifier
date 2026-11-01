@@ -3,42 +3,27 @@
 # The module proxy of a lockfile, for the sandboxed build: every locked
 # proxy file at its proxy path, and the files of every module from version
 # control, each as a link into the store. The go command reads it as
-# GOPROXY=file://<this>. It is a package for callPackage, with the
-# lockfile among its arguments; buildGoProject's `proxy` is this.
+# GOPROXY=file://<this>; buildGoProject's `proxy` is this.
 #
 # The entries are fetched with fetchEntry of the shared library of the
-# nix-purifiers, whose source is purifierLib.
+# nix-purifiers, with the fetchers the builder was given.
 {
-  lib,
   pkgs,
-  stdenv,
-  runCommand,
-  purifierLib,
+  # The functions of the shared library.
+  purifier,
   lockFile,
   # The go-purifier command, which makes the files of modules from version
-  # control. Only a lockfile with such modules needs it.
-  cli ? null,
-  # Replace nixpkgs' fetchurl and fetchgit, for credentials or mirrors.
-  fetchurl ? null,
-  fetchgit ? null,
+  # control. Only a lockfile with such modules builds it.
+  cli,
+  fetchers,
 }:
 let
+  inherit (pkgs) lib stdenv runCommand;
   lock = import ./lock.nix { inherit lockFile; };
-  inherit ((import "${purifierLib}/default.nix" { inherit lib; })) fetchEntry;
-  fetch = fetchEntry (
-    {
-      inherit pkgs;
-    }
-    // lib.optionalAttrs (fetchurl != null) { inherit fetchurl; }
-    // lib.optionalAttrs (fetchgit != null) { inherit fetchgit; }
-  );
+  fetch = purifier.fetchEntry ({ inherit pkgs; } // fetchers);
   vcsModule = import ./vcs-module.nix {
     inherit lock fetch;
-    cli =
-      if cli != null then
-        lib.getExe cli
-      else
-        throw "go-purifier: the lockfile has modules from version control, whose files the go-purifier command makes; pass `cli` or apply the go-purifier overlay";
+    cli = lib.getExe cli;
     system = stdenv.buildPlatform.system;
   };
   vcsLines = lib.concatMapStrings (

@@ -17,30 +17,36 @@ import (
 )
 
 // A Go module is published by tagging a commit of its repository; the
-// module proxy serves any tagged version on request. `go-purifier release`
+// module proxy serves any tagged version on request. `go-purifier publish`
 // builds the release archives of the module's commands through Nix from
 // the commit it tags, so the archives hold what the Nix build of that
-// commit produces, and then tags the commit. With --push it also pushes
-// the tag, creates a GitHub release with the archives, and asks the lock
-// proxy for the new version so the proxy caches it.
+// commit produces, and tags the commit. It then pushes the tag, creates a
+// GitHub release with the archives, and asks the lock proxy for the new
+// version so the proxy caches it. With --dry-run it stops after the tag.
 //
-//	go-purifier release <version> [--push]
+//	go-purifier publish <version> [--dry-run] [--lockfile <path>]
 
-func releaseCommand(args []string) error {
+const publishUsage = "usage: go-purifier publish <version> [--dry-run] [--lockfile <path>]"
+
+func publishCommand(args []string) error {
+	lockFlag, args, err := lockfileFlag(args)
+	if err != nil {
+		return err
+	}
 	var version string
-	push := false
+	push := true
 	for _, a := range args {
 		switch {
-		case a == "--push":
-			push = true
+		case a == "--dry-run":
+			push = false
 		case version == "" && !strings.HasPrefix(a, "-"):
 			version = a
 		default:
-			return fmt.Errorf("usage: go-purifier release <version> [--push]")
+			return errors.New(publishUsage)
 		}
 	}
 	if version == "" {
-		return fmt.Errorf("usage: go-purifier release <version> [--push]")
+		return errors.New(publishUsage)
 	}
 
 	goBin, err := realGo()
@@ -56,7 +62,7 @@ func releaseCommand(args []string) error {
 		return err
 	}
 	if env.GOMOD == "" || env.GOMOD == os.DevNull {
-		return errors.New("run go-purifier release in the directory of the module to release")
+		return errors.New("run go-purifier publish in the directory of the module to publish")
 	}
 	modDir := filepath.Dir(env.GOMOD)
 	modPath, err := modulePath(env.GOMOD)
@@ -71,14 +77,15 @@ func releaseCommand(args []string) error {
 	if err != nil {
 		return err
 	}
-	lock, err := readLock(filepath.Join(root, lockFileName))
+	lockPath := lockPathAt(root, lockFlag)
+	lock, err := readLock(lockPath)
 	if err != nil {
 		return fmt.Errorf("a release builds from the lockfile: %w", err)
 	}
 	if current, err := definitionHash(root, lock.DefinitionFiles); err != nil {
 		return err
 	} else if current != lock.DefinitionHash {
-		return errors.New("the lockfile is stale; run go-purifier lock and commit it first")
+		return errors.New("go.mod, go.sum or go.work changed since the lockfile was written; run `go-purifier lock` and commit the lockfile first")
 	}
 
 	top, err := output(modDir, "git", "rev-parse", "--show-toplevel")
@@ -102,6 +109,9 @@ func releaseCommand(args []string) error {
 	if err != nil {
 		return err
 	}
+	if rootRel == "." {
+		rootRel = ""
+	}
 	tag := releaseTag(filepath.ToSlash(modRel), modPath, version)
 
 	nixLib := os.Getenv("GO_PURIFIER_NIX_LIB")
@@ -122,6 +132,7 @@ func releaseCommand(args []string) error {
 		"--argstr", "repo", top,
 		"--argstr", "rev", rev,
 		"--argstr", "modRoot", filepath.ToSlash(rootRel),
+		"--argstr", "lockFile", lockPath,
 		"--argstr", "version", version,
 		"--argstr", "cli", self,
 		"--no-out-link", "--quiet")
@@ -140,7 +151,7 @@ func releaseCommand(args []string) error {
 	}
 	fmt.Fprintf(os.Stderr, "go-purifier: tagged %s as %s\n", rev, tag)
 	if !push {
-		fmt.Fprintf(os.Stderr, "go-purifier: run go-purifier release %s --push to publish it, or push the tag yourself\n", version)
+		fmt.Fprintf(os.Stderr, "go-purifier: stopped before pushing (--dry-run); push %s and create the release yourself, or delete the tag and run go-purifier publish %s\n", tag, version)
 		return nil
 	}
 

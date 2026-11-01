@@ -21,7 +21,7 @@ import (
 	"path/filepath"
 )
 
-const usageText = `usage: go-purifier <command>
+const usageText = `usage: go-purifier <command> [--lockfile <path>]
 
 Commands:
   lock               write go-purifier.lock.json for the module or
@@ -29,12 +29,18 @@ Commands:
                      that define its dependencies are unchanged since the
                      last lock
   relock             write go-purifier.lock.json even if it is current
-  release <version>  build the release archives of the module's commands
-                     through Nix, and tag the release; with --push, also
-                     push the tag, create a GitHub release and ask the
-                     module proxy for the version
+  prefetch           realize the locked downloads and the toolchain in the
+                     Nix store, with GC roots in .go-purifier/ at the lock
+                     root, so that go and gopls work with no network
+  publish <version>  build the release archives of the module's commands
+                     through Nix, tag the release, push the tag, create a
+                     GitHub release and ask the module proxy for the
+                     version; --dry-run stops after the tag
   go ...             run the go command against the locked downloads; the
                      same as invoking this binary as "go"
+
+--lockfile names a lockfile outside the source tree. The go command takes
+it from GO_PURIFIER_LOCKFILE.
 
 Environment:
   GO_PURIFIER_GO       the go command to run (the flake's wrapper sets it)
@@ -43,6 +49,7 @@ Environment:
   GO_PURIFIER_PROXY    the module proxy a lock downloads from; the default
                        is the first proxy URL in GOPROXY, or
                        https://proxy.golang.org
+  GO_PURIFIER_LOCKFILE the lockfile, when it lies outside the source tree
   GONOPROXY, GOPRIVATE the modules a lock fetches from version control
   GO_PURIFIER=0        run go without the locked downloads
 `
@@ -58,11 +65,13 @@ func main() {
 	var err error
 	switch os.Args[1] {
 	case "lock":
-		err = lockCommand(false)
+		err = lockCommand(false, os.Args[2:])
 	case "relock":
-		err = lockCommand(true)
-	case "release":
-		err = releaseCommand(os.Args[2:])
+		err = lockCommand(true, os.Args[2:])
+	case "prefetch":
+		err = prefetchCommand(os.Args[2:])
+	case "publish":
+		err = publishCommand(os.Args[2:])
 	case "go":
 		os.Exit(runGo(os.Args[2:]))
 	// The builders of the Nix derivations nix/lib makes; see vcs.go and

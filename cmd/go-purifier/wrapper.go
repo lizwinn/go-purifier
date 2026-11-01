@@ -198,18 +198,20 @@ func workingDir(args []string) (string, error) {
 const noProxyMatchesNothing = "go-purifier.invalid"
 
 // interactiveEnv is what the go command's environment gains when it runs
-// in dir, inside a build with a current lockfile, and the proxy tree it
-// reads. For most commands the locked downloads are the only proxy. A
-// command that changes the dependencies reads them first and the user's
-// GOPROXY after them, with the user's GONOPROXY and GOSUMDB, so that it can
-// add modules the lockfile does not hold yet. A build without a lockfile,
-// or with a stale one, resolves the usual way.
+// in dir, inside a build with a lockfile, and the proxy tree it reads. For
+// most commands the locked downloads are the only proxy, and a lockfile
+// that is stale or of another format version stops them with the command
+// to run. A command that changes the dependencies reads the locked
+// downloads first and the user's GOPROXY after them, with the user's
+// GONOPROXY and GOSUMDB, so that it can add modules the lockfile does not
+// hold yet; once the lockfile is stale, it resolves the usual way. A build
+// without a lockfile resolves the usual way.
 func interactiveEnv(goBin, dir string, changing bool) ([]string, string, error) {
 	root, ok := findLockRoot(dir)
 	if !ok {
 		return nil, "", nil
 	}
-	lockPath := filepath.Join(root, lockFileName)
+	lockPath := lockPathAt(root, "")
 	lock, err := readLock(lockPath)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, "", nil
@@ -218,18 +220,20 @@ func interactiveEnv(goBin, dir string, changing bool) ([]string, string, error) 
 		return nil, "", err
 	}
 	if lock.Version != lockFormatVersion {
-		fmt.Fprintf(os.Stderr, "go-purifier: %s has lock format version %d and this go-purifier reads version %d; resolving the usual way until `go-purifier relock` renews it\n", lockPath, lock.Version, lockFormatVersion)
-		return nil, "", nil
+		if changing {
+			return nil, "", nil
+		}
+		return nil, "", fmt.Errorf("%s has lock format version %d and this go-purifier reads version %d; run `go-purifier relock` to write it again, or set GO_PURIFIER=0 to run go without it", lockPath, lock.Version, lockFormatVersion)
 	}
 	definition, err := definitionHash(root, lock.DefinitionFiles)
 	if err != nil {
 		return nil, "", err
 	}
 	if lock.DefinitionHash != definition {
-		if !changing {
-			fmt.Fprintf(os.Stderr, "go-purifier: go.mod, go.sum or go.work changed since %s was written; resolving the usual way until `go-purifier lock` renews it\n", lockPath)
+		if changing {
+			return nil, "", nil
 		}
-		return nil, "", nil
+		return nil, "", fmt.Errorf("go.mod, go.sum or go.work changed since %s was written; run `go-purifier lock`, or set GO_PURIFIER=0 to run go without the lockfile", lockPath)
 	}
 	proxyDir, err := realize(root, lockPath)
 	if err != nil {
@@ -256,19 +260,18 @@ func interactiveEnv(goBin, dir string, changing bool) ([]string, string, error) 
 	}, proxyDir, nil
 }
 
+// stateDirName is the directory, at the lock root, that holds the GC roots
+// of the locked downloads and the toolchain. Projects keep it out of
+// version control.
+const stateDirName = ".go-purifier"
+
 // realize builds the proxy tree of a lockfile through Nix and returns the
-// path of a GC root that links to it, under a per-build directory of the
-// user cache directory. Nix fetches every locked download in parallel,
-// makes the files of modules from version control, and links them into
-// one tree in the store. A tree built from the same lockfile content is
-// reused.
+// path of a GC root that links to it, in the state directory at the lock
+// root. Nix fetches every locked download in parallel, makes the files of
+// modules from version control, and links them into one tree in the store.
+// A tree built from the same lockfile content is reused.
 func realize(root, lockPath string) (string, error) {
-	cache, err := os.UserCacheDir()
-	if err != nil {
-		return "", err
-	}
-	rootSum := sha256.Sum256([]byte(root))
-	dir := filepath.Join(cache, "go-purifier", hex.EncodeToString(rootSum[:8]))
+	dir := filepath.Join(root, stateDirName)
 	proxyLink := filepath.Join(dir, "proxy")
 	stampPath := filepath.Join(dir, "stamp")
 

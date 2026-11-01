@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // The lock root is the directory the go command treats as the root of the
@@ -33,6 +34,53 @@ func findLockRoot(dir string) (string, bool) {
 		}
 	}
 	return findUp(dir, "go.mod")
+}
+
+// lockfileFlag takes a `--lockfile <path>` or `--lockfile=<path>` flag out
+// of a command's arguments. A lockfile outside the source tree lets a
+// project whose author does not use go-purifier be locked and built.
+func lockfileFlag(args []string) (string, []string, error) {
+	var path string
+	var rest []string
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case a == "--lockfile":
+			if i+1 == len(args) {
+				return "", nil, errors.New("--lockfile needs a path")
+			}
+			path = args[i+1]
+			i++
+		case strings.HasPrefix(a, "--lockfile="):
+			path = strings.TrimPrefix(a, "--lockfile=")
+		default:
+			rest = append(rest, a)
+		}
+	}
+	if path != "" && !filepath.IsAbs(path) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", nil, err
+		}
+		path = filepath.Join(cwd, path)
+	}
+	return path, rest, nil
+}
+
+// lockPathAt is the lockfile of the build at a lock root: the one a flag
+// or GO_PURIFIER_LOCKFILE names, or go-purifier.lock.json at the root.
+func lockPathAt(root, flag string) string {
+	if flag != "" {
+		return flag
+	}
+	if env := os.Getenv("GO_PURIFIER_LOCKFILE"); env != "" {
+		if filepath.IsAbs(env) {
+			return env
+		}
+		if cwd, err := os.Getwd(); err == nil {
+			return filepath.Join(cwd, env)
+		}
+	}
+	return filepath.Join(root, lockFileName)
 }
 
 // findUp is the nearest directory at or above dir that holds a file name.

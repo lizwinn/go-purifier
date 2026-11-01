@@ -28,18 +28,15 @@
   # `nix run github:nix-purifiers/go-purifier -- lock` locks the Go module
   # in the current directory.
   #
-  # `nix develop github:nix-purifiers/go-purifier` gives a shell whose `go`
-  # runs against the module's locked downloads, with gopls, which runs that
-  # `go` as well.
+  # `nix develop github:nix-purifiers/go-purifier` gives a shell with the
+  # toolchain: its `go` runs against the locked downloads, and its gopls
+  # runs that `go`.
   perSystem =
     { config, pkgs, ... }:
     {
       packages.default = config.packages.toolchain;
       devShells.default = pkgs.mkShell {
-        packages = [
-          config.packages.toolchain
-          pkgs.gopls
-        ];
+        packages = [ config.packages.toolchain ];
       };
     };
 
@@ -68,6 +65,7 @@
           {
             checks = import ../../../tests {
               inherit pkgs;
+              inherit (self.lib.go-purifier) buildGoProject;
               overlay = self.overlays.default;
             };
             treefmt.programs.nixfmt.enable = true;

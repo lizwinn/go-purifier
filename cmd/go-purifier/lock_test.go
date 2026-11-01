@@ -246,6 +246,23 @@ func TestDefinitionHash(t *testing.T) {
 	}
 }
 
+// A relock keeps the GONOPROXY patterns of a lockfile that fails its
+// checks, since relocking is how such a lockfile is fixed.
+func TestPreviousNoProxy(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, lockFileName)
+	writeFiles(t, dir, map[string]string{lockFileName: `{"version": 1, "noProxy": "example.com/private", "contentHash": "sha256-wrong"}`})
+	if _, err := readLock(path); err == nil {
+		t.Fatal("readLock accepted a lockfile with a wrong contentHash")
+	}
+	if got := previousNoProxy(path); got != "example.com/private" {
+		t.Errorf("previousNoProxy = %q, want example.com/private", got)
+	}
+	if got := previousNoProxy(filepath.Join(dir, "absent.json")); got != "" {
+		t.Errorf("previousNoProxy of a missing file = %q", got)
+	}
+}
+
 func TestDefinitionFiles(t *testing.T) {
 	root := "/w"
 	got, err := definitionFiles(root, true, []string{"/w/app", "/w/lib", "/lib2", "/w/app"})
