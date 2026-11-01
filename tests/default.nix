@@ -10,15 +10,16 @@
 # (.github/workflows/check.yml).
 {
   pkgs,
-  buildGoProject,
   readLock,
   overlay,
 }:
 let
   inherit (pkgs) lib runCommand;
-  packages = (pkgs.extend overlay).go-purifier;
-
-  build = args: buildGoProject ({ inherit pkgs; } // args);
+  # The package set with the go-purifier overlay, which adds the scope
+  # `go-purifier` and the builder `buildGoProject`.
+  withOverlay = pkgs.extend overlay;
+  packages = withOverlay.go-purifier;
+  build = withOverlay.buildGoProject;
 
   # A module with proxy dependencies, one of them case-encoded, and a
   # dependency only its tests load.
@@ -145,6 +146,35 @@ in
     prints "real-world-fzf-version" "${lib.getExe fzf.packages.fzf} --version"
       "0.74.5 (c0a193e0)";
   real-world-fzf-tests = fzf.tests;
+
+  # A package written for callPackage, in an overlay, takes the builder by
+  # name.
+  overlay-consumer =
+    let
+      consumerSet = withOverlay.extend (
+        final: prev: {
+          greet = final.callPackage (
+            { buildGoProject }: (buildGoProject { src = ./fixtures/hello; }).packages.greet
+          ) { };
+        }
+      );
+    in
+    prints "overlay-consumer"
+      "printf 'name = \"Nix\"\\nlanguage = \"de\"\\n' | ${lib.getExe consumerSet.greet}"
+      "Hello, Nix (German)";
+
+  # buildGoProject.override replaces what the builder takes from the
+  # package set, here the go toolchain.
+  overlay-override =
+    let
+      marker = pkgs.symlinkJoin {
+        name = "go-override-marker";
+        paths = [ pkgs.go ];
+      };
+      overridden = (withOverlay.buildGoProject.override { go = marker; }) { src = ./fixtures/hello; };
+    in
+    assert builtins.elem marker overridden.all.nativeBuildInputs;
+    prints "overlay-override" "${lib.getExe overridden.packages.uuidgen} | wc -c" "37";
 
   fixture-hello-greet =
     prints "fixture-hello-greet"

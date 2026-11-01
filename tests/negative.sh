@@ -56,9 +56,9 @@ expect_build_failure() {
   if nix build --impure --no-link --expr "
     let
       flake = builtins.getFlake \"git+file:$repo\";
-      pkgs = import flake.inputs.nixpkgs { system = builtins.currentSystem; };
+      pkgs = import flake.inputs.nixpkgs { system = builtins.currentSystem; overlays = [ flake.overlays.default ]; };
     in
-    (flake.lib.go-purifier.buildGoProject { inherit pkgs; src = /. + \"$dir\"; }).packages.greet
+    (pkgs.buildGoProject { src = /. + \"$dir\"; }).packages.greet
   " > "$log" 2>&1; then
     echo "negative: the Nix build of $dir succeeded; expected a failure mentioning: $text" >&2
     exit 1

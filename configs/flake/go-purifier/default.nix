@@ -65,7 +65,7 @@
           {
             checks = import ../../../tests {
               inherit pkgs;
-              inherit (self.lib.go-purifier) buildGoProject readLock;
+              inherit (self.lib.go-purifier) readLock;
               overlay = self.overlays.default;
             };
             treefmt.programs.nixfmt.enable = true;

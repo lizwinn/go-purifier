@@ -196,9 +196,9 @@ expected="hgmod svnmod bzrmod fossilmod"
 built=$(env -u HTTP_PROXY -u HTTPS_PROXY nix build --impure --no-link --print-out-paths --expr "
   let
     flake = builtins.getFlake \"git+file:$repo\";
-    pkgs = import flake.inputs.nixpkgs { system = builtins.currentSystem; };
+    pkgs = import flake.inputs.nixpkgs { system = builtins.currentSystem; overlays = [ flake.overlays.default ]; };
   in
-  (flake.lib.go-purifier.buildGoProject { inherit pkgs; src = /. + \"$consumer\"; }).packages.vcssystems
+  (pkgs.buildGoProject { src = /. + \"$consumer\"; }).packages.vcssystems
 ")
 if [ "$("$built/bin/vcssystems")" != "$expected" ]; then
   echo "vcs-systems: the Nix build printed $("$built/bin/vcssystems")" >&2

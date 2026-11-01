@@ -2,13 +2,18 @@
 #
 # buildGoProject: the sandboxed build of a Go module or workspace, from the
 # lockfile `go-purifier lock` writes at its lock root (next to go.mod, or
-# next to go.work for a workspace). The flake publishes it in its library
-# as lib.go-purifier.buildGoProject:
+# next to go.work for a workspace).
 #
-#   (go-purifier.lib.go-purifier.buildGoProject { inherit pkgs; src = ./.; }).packages.hello
+# The file is a package for callPackage: the first argument set is what it
+# takes from the package set, and the result is the builder. The
+# go-purifier overlay (`overlays.default`) adds it to the package set as
+# `buildGoProject`, so a package written for callPackage takes it like any
+# other builder:
 #
-# This file takes the functions of the shared library of the nix-purifiers
-# and returns the builder. The builder returns
+#   { buildGoProject }: (buildGoProject { src = ./.; }).packages.hello
+#
+# and `buildGoProject.override` replaces what it takes from the set. The
+# builder returns
 #
 #   packages.<name>  the command <name>, for each main package of the main
 #                    modules the lockfile names
@@ -23,12 +28,27 @@
 #                    packages link into
 #   proxy            the module proxy tree of the locked downloads
 #   lock             the lockfile, read
-{ purifier }:
+{
+  lib,
+  stdenv,
+  runCommand,
+  # The go toolchain. go.mod's `go` line sets the oldest it accepts.
+  go,
+  # The fetchers of the entries of the lockfile, which fetchEntry of the
+  # shared library calls.
+  fetchurl,
+  fetchgit,
+  fetchhg,
+  fetchsvn,
+  fetchfossil,
+  fetchbzr,
+  # The functions of the shared library of the nix-purifiers, which the
+  # go-purifier overlay passes.
+  purifier,
+}:
 let
   buildGoProject =
     {
-      # The package set to build with.
-      pkgs,
       # The source tree. It holds the lock root, and every directory a
       # replace directive of the build points at.
       src,
@@ -44,8 +64,6 @@ let
       # The go.sum of the lock root, for a src that has none. It replaces
       # any go.sum at the lock root.
       goSum ? null,
-      # The go toolchain. go.mod's `go` line sets the oldest it accepts.
-      goToolchain ? pkgs.go,
       # The version in the names of the release archives, or null.
       version ? null,
       # Passed to `go build` and `go test` as -tags and -ldflags.
@@ -61,8 +79,23 @@ let
       srcFilter ? null,
     }:
     let
-      inherit (pkgs) lib stdenv runCommand;
       lock = import ./lock.nix { inherit lockFile; };
+
+      # fetchEntry of the shared library, with the fetchers of the package
+      # set, each of which `fetchers` can replace.
+      fetch = purifier.fetchEntry (
+        {
+          inherit
+            fetchurl
+            fetchgit
+            fetchhg
+            fetchsvn
+            fetchfossil
+            fetchbzr
+            ;
+        }
+        // fetchers
+      );
 
       # The lock in memory, which checkLock of the shared library fails
       # with its problems: a lockfile that is missing, damaged, of another
@@ -93,7 +126,7 @@ let
       };
       cli =
         (buildGoProject {
-          inherit pkgs fetchers;
+          inherit fetchers;
           src = cliSrc;
         }).packages.go-purifier;
 
@@ -126,11 +159,12 @@ let
 
       proxy = import ./proxy.nix {
         inherit
-          pkgs
-          purifier
+          lib
+          stdenv
+          runCommand
           lockFile
           cli
-          fetchers
+          fetch
           ;
         entries = purifier.entriesFor stdenv.buildPlatform.system checkedLock;
       };
@@ -181,7 +215,7 @@ let
         stdenv.mkDerivation (
           {
             src = filteredSrc;
-            nativeBuildInputs = [ goToolchain ] ++ nativeBuildInputs;
+            nativeBuildInputs = [ go ] ++ nativeBuildInputs;
             inherit buildInputs;
             dontConfigure = true;
             preBuild = goEnvironment;

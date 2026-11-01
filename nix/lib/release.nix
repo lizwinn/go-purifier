@@ -27,13 +27,12 @@ let
     inherit rev;
   };
   inRepo = pkgs.lib.removePrefix (repo + "/") lockFile;
-  buildGoProject = import ./build-go-project.nix {
+  buildGoProject = pkgs.callPackage ./build-go-project.nix {
     purifier = import (purifierLib + "/default.nix") { inherit (pkgs) lib; };
   };
 in
 (buildGoProject {
   inherit
-    pkgs
     src
     modRoot
     version

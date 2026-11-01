@@ -1,15 +1,15 @@
 # SPDX-License-Identifier: MIT
 #
 # The packages of the `go-purifier` scope. caisson passes the composed
-# library as `lib`, whose `go-purifier` namespace has the builder and the
-# source of the shared library.
+# library as `lib`, whose `go-purifier` namespace has the source of the
+# shared library.
 {
   callPackage,
   lib,
   ...
 }:
 let
-  cli = callPackage ./cli { inherit (lib.go-purifier) buildGoProject; };
+  cli = callPackage ./cli { };
 in
 {
   # The go-purifier command, built by buildGoProject from this

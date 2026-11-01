@@ -4,13 +4,10 @@
 # proxy file at its proxy path, and the files of every module from version
 # control, each as a link into the store. The go command reads it as
 # GOPROXY=file://<this>; buildGoProject's `proxy` is this.
-#
-# The entries are fetched with fetchEntry of the shared library of the
-# nix-purifiers, with the fetchers the builder was given.
 {
-  pkgs,
-  # The functions of the shared library.
-  purifier,
+  lib,
+  stdenv,
+  runCommand,
   lockFile,
   # The entries of the lock in memory for the build platform, from
   # entriesFor of the shared library.
@@ -18,12 +15,12 @@
   # The go-purifier command, which makes the files of modules from version
   # control. Only a lockfile with such modules builds it.
   cli,
-  fetchers,
+  # Fetches an entry: fetchEntry of the shared library of the
+  # nix-purifiers, with the fetchers the builder was given.
+  fetch,
 }:
 let
-  inherit (pkgs) lib stdenv runCommand;
   lock = import ./lock.nix { inherit lockFile; };
-  fetch = purifier.fetchEntry ({ inherit pkgs; } // fetchers);
   vcsModule = import ./vcs-module.nix {
     inherit lock fetch;
     cli = lib.getExe cli;
