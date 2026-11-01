@@ -19,7 +19,9 @@ nix run github:nix-purifiers/go-purifier -- lock
 ```
 
 This writes `go-purifier.lock.json` next to `go.mod`, or next to `go.work`
-for a workspace. Commit it.
+for a workspace. We recommend committing it to the repository together
+with `go.sum`, and the builder and the commands look for both there by
+default.
 
 The flake's `overlays.default` adds the builder `buildGoProject` to a
 package set, where nixpkgs keeps its own builders. A package written for
@@ -67,9 +69,7 @@ package set, where nixpkgs keeps its own builders. A package written for
 `nix/lib/build-go-project.nix` documents the arguments. `modRoot` is the
 lock root inside `src`, for a build whose `replace` directives point
 outside the lock root; `src` then has to contain those directories.
-`lockFile` and `goSum` take a lockfile and a `go.sum` kept outside `src`,
-so that a packaging flake can build a project whose author does not use
-go-purifier. `fetchers` replaces the fetchers of the shared library, such
+`fetchers` replaces the fetchers of the shared library, such
 as a `fetchurl` with credentials or a company mirror. `version`, `tags`,
 `ldflags`, `buildInputs`, `nativeBuildInputs` and `srcFilter` do what
 their names say.
@@ -77,6 +77,18 @@ their names say.
 `buildGoProject.override` replaces what the builder takes from the
 package set. `buildGoProject.override { go = pkgs.go_1_26; }` builds with
 another go toolchain.
+
+A flake can also keep the build of a project external, such as to
+package a project whose repository holds no go-purifier lockfile. The
+flake keeps the lockfile outside the tree and passes it as `lockFile`. It
+can also keep its own copy of `go.sum` and pass it as `goSum`, which the
+build uses in place of the `go.sum` in `src`. `go-purifier lock` and
+`go-purifier update` write to those copies with `--lockfile <path>` and
+`--tool-lockfile <path>`, or with the variables `GO_PURIFIER_LOCKFILE` and
+`GO_PURIFIER_TOOL_LOCKFILE`, and leave the files in the tree as they are.
+`lock` starts from the `go.sum` in the tree when the outside copy does not
+exist yet. `--tool-lockfile` replaces the `go.sum` of one module, so a
+workspace takes only `--lockfile`.
 
 `lib.go-purifier.readLock { src; }` reads the lockfile into the shape all
 nix-purifiers share: the download entries, the commands as outputs, and
@@ -263,9 +275,9 @@ A flake reads only the files git tracks, so add both files with
 `git add go-purifier.lock.json flake.nix`. `nix build` then builds fzf,
 and `nix flake check` runs its tests in the sandbox.
 
-To package fzf without changing its repository, keep the lockfile in your
-own flake instead. Run the lock in a clone at the tag you package, and
-write the lockfile next to your `flake.nix`:
+To package fzf without changing its repository, an external build keeps
+the lockfile in your own flake instead. Run the lock in a clone at the tag
+you package, and write the lockfile next to your `flake.nix`:
 
 ```zsh
 git clone --branch v0.74.5 https://github.com/junegunn/fzf

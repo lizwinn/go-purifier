@@ -20,8 +20,9 @@
   # The lock root inside src, or "" when src is the lock root.
   modRoot ? "",
   lockFile ? (if modRoot == "" then src else src + "/${modRoot}") + "/go-purifier.lock.json",
-  # The go.sum of the lock root, for a src that has none.
-  goSum ? null,
+  # The go.sum of the lock root. An external build can pass a copy kept
+  # outside src, which takes the place of the go.sum in src.
+  goSum ? (if modRoot == "" then src else src + "/${modRoot}") + "/go.sum",
 }:
 let
   lock = import ./lock.nix {
@@ -36,7 +37,7 @@ let
     if builtins.isPath src then
       lock.staleProblems {
         root = if modRoot == "" then src else src + "/${modRoot}";
-        overrides = if goSum != null then { "go.sum" = goSum; } else { };
+        overrides."go.sum" = goSum;
       }
     else
       [ ];

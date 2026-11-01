@@ -225,7 +225,7 @@ func interactiveEnv(goBin, dir string, changing bool) ([]string, string, error) 
 		}
 		return nil, "", fmt.Errorf("%s has lock format version %d and this go-purifier reads version %d; run `go-purifier lock` to write it again, or set GO_PURIFIER=0 to run go without it", lockPath, lock.Version, lockFormatVersion)
 	}
-	definition, err := definitionHash(root, lock.DefinitionFiles)
+	definition, err := definitionHash(root, lock.DefinitionFiles, toolLockOverrides())
 	if err != nil {
 		return nil, "", err
 	}

@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "proxy": "https://proxy.golang.org",
+  "noProxy": "",
+  "definitionFiles": [
+    "go.mod",
+    "go.sum"
+  ],
+  "definitionHash": "sha256-HZoqpDyDTw2O6XO8IMPj+Ez6wDeHQH/CB2E86acDQ2A=",
+  "binaries": [
+    {
+      "name": "greet",
+      "package": "example.com/hello/cmd/greet"
+    },
+    {
+      "name": "uuidgen",
+      "package": "example.com/hello/cmd/uuidgen"
+    }
+  ],
+  "files": {
+    "github.com/!burnt!sushi/toml/@v/v1.4.0.mod": "sha256-RdeLgFcZmbaiWNoPIWc9o55rUBNJwDOkrNFpQ3QR1zM=",
+    "github.com/!burnt!sushi/toml/@v/v1.4.0.zip": "sha256-2SdNW//bf/CYiQVbQtnhI3g1Ze53bWOnMVIZ7BWpgnY=",
+    "github.com/google/go-cmp/@v/v0.6.0.mod": "sha256-58dmnUod1Ym6PgJLon9D8pPbYR/gdc4g17iENw1j/r0=",
+    "github.com/google/go-cmp/@v/v0.6.0.zip": "sha256-S06b9sSCEQgGUbSR37SNaLc2xmowW8+UYFYG4bouqko=",
+    "github.com/google/uuid/@v/v1.6.0.mod": "sha256-c9pHtjOLAKCC/UUao1oyc9OtwJuOm7qY2rAQkeQCr24=",
+    "github.com/google/uuid/@v/v1.6.0.zip": "sha256-0PAvN3IX9CcC4lloTgZEHtv1FA3dzDS6m+pWA4s4pu0=",
+    "golang.org/x/text/@v/v0.21.0.mod": "sha256-wBWvdGl7kVrUGQvifPb1u+AqFYrM7w281KQqEAAt9JY=",
+    "golang.org/x/text/@v/v0.21.0.zip": "sha256-vj23kWUa9vLLAiWqXVV4wjFJsgFyRrqOWVhggLqt1hI="
+  },
+  "checkouts": [],
+  "vcsModules": [],
+  "contentHash": "sha256-eCv8b3Njn4/Uq+C7r8RntColf3P7etn/xQkjQolo3lE="
+}

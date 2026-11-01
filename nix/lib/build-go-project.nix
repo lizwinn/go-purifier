@@ -42,6 +42,12 @@
   fetchsvn,
   fetchfossil,
   fetchbzr,
+  # The packages fetchEntry builds with after a fetch, such as for
+  # unpacking an archive.
+  unzip,
+  zstd,
+  python3,
+  writeText,
   # The functions of the shared library of the nix-purifiers, which the
   # go-purifier overlay passes.
   purifier,
@@ -61,9 +67,9 @@ let
       # The lockfile. A lockfile outside src lets a packaging flake build a
       # project whose author does not use go-purifier.
       lockFile ? (if modRoot == "" then src else src + "/${modRoot}") + "/go-purifier.lock.json",
-      # The go.sum of the lock root, for a src that has none. It replaces
-      # any go.sum at the lock root.
-      goSum ? null,
+      # The go.sum of the lock root. An external build can pass a copy kept
+      # outside src, which the build uses in place of the go.sum in src.
+      goSum ? (if modRoot == "" then src else src + "/${modRoot}") + "/go.sum",
       # The version in the names of the release archives, or null.
       version ? null,
       # Passed to `go build` and `go test` as -tags and -ldflags.
@@ -92,10 +98,19 @@ let
             fetchsvn
             fetchfossil
             fetchbzr
+            runCommand
+            unzip
+            zstd
+            python3
+            writeText
             ;
         }
         // fetchers
       );
+
+      # Whether goSum is a copy outside src, which replaces the go.sum in
+      # src.
+      replacesGoSum = goSum != (if modRoot == "" then src else src + "/${modRoot}") + "/go.sum";
 
       # The lock in memory, which checkLock of the shared library fails
       # with its problems: a lockfile that is missing, damaged, of another
@@ -184,7 +199,7 @@ let
       # hold, and goWithHint says what to run.
       goEnvironment = ''
         cd ${lib.escapeShellArg (if modRoot == "" then "." else modRoot)}
-        ${lib.optionalString (goSum != null) "cp ${goSum} go.sum"}
+        ${lib.optionalString replacesGoSum "cp ${goSum} go.sum"}
         export HOME="$TMPDIR/home"
         export GOCACHE="$TMPDIR/go-cache"
         export GOMODCACHE="$TMPDIR/go-mod"

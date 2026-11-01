@@ -55,6 +55,13 @@ let
     src = ./fixtures/conformance/external/src;
     lockFile = ./fixtures/conformance/external/go-purifier.lock.json;
   };
+  # The same, with an empty go.sum in the source tree, replaced by the
+  # complete go.sum kept beside it.
+  externalGoSum = build {
+    src = ./fixtures/conformance/external-go-sum/src;
+    lockFile = ./fixtures/conformance/external-go-sum/go-purifier.lock.json;
+    goSum = ./fixtures/conformance/external-go-sum/go.sum;
+  };
 
   # Runs a command and compares what it prints.
   prints =
@@ -132,6 +139,10 @@ in
   conformance-external =
     prints "conformance-external"
       "printf 'name = \"Nix\"\\nlanguage = \"de\"\\n' | ${lib.getExe external.packages.greet}"
+      "Hello, Nix (German)";
+  conformance-external-go-sum =
+    prints "conformance-external-go-sum"
+      "printf 'name = \"Nix\"\\nlanguage = \"de\"\\n' | ${lib.getExe externalGoSum.packages.greet}"
       "Hello, Nix (German)";
 
   # fzf v0.74.5, an example of an external build: fzf is built from its
@@ -257,6 +268,18 @@ in
     assert hasProblem ./fixtures/conformance/tampered "contentHash does not match its content";
     assert hasProblem ./fixtures/conformance/version "has lock format version 99";
     assert hasProblem ./fixtures/conformance/external/src "there is no lockfile";
+    # A go.sum kept outside src takes the place of the empty one in it.
+    assert
+      (readLock {
+        src = ./fixtures/conformance/external-go-sum/src;
+        lockFile = ./fixtures/conformance/external-go-sum/go-purifier.lock.json;
+        goSum = ./fixtures/conformance/external-go-sum/go.sum;
+      }).problems == [ ];
+    assert builtins.any (lib.hasInfix "run `go-purifier lock`")
+      (readLock {
+        src = ./fixtures/conformance/external-go-sum/src;
+        lockFile = ./fixtures/conformance/external-go-sum/go-purifier.lock.json;
+      }).problems;
     runCommand "read-lock" { } "touch $out";
 
   # A replace directive to a directory outside src fails the build, which

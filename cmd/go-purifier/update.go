@@ -11,7 +11,7 @@ import (
 // updateCommand updates the dependencies of the module or workspace of the
 // current directory, then locks it:
 //
-//	go-purifier update [--lockfile <path>] [<module>...]
+//	go-purifier update [--lockfile <path>] [--tool-lockfile <path>] [<module>...]
 //
 // Without module paths, `go get -u -t ./...` in each main module updates
 // every module its packages and their tests import to the latest minor or
@@ -19,9 +19,14 @@ import (
 // those. `go mod tidy` then settles go.mod and go.sum, and in a workspace
 // `go work sync` brings the main modules to the same versions. The go
 // command resolves the updates through the user's GOPROXY, the way a `go
-// get` outside go-purifier does.
+// get` outside go-purifier does. With --tool-lockfile, the update and the
+// lock work on the go.sum at that path (withToolLock).
 func updateCommand(args []string) error {
-	lockFlag, modules, err := lockfileFlag(args)
+	lockFlag, args, err := lockfileFlag(args)
+	if err != nil {
+		return err
+	}
+	toolFlag, modules, err := toolLockfileFlag(args)
 	if err != nil {
 		return err
 	}
@@ -33,6 +38,14 @@ func updateCommand(args []string) error {
 	if err != nil {
 		return err
 	}
+	return withToolLock(goBin, cwd, toolFlag, func() error {
+		return updateAt(goBin, cwd, lockFlag, modules)
+	})
+}
+
+// updateAt updates the module or workspace of directory dir, then locks
+// it into the lockfile that lockFlag or the lock root names.
+func updateAt(goBin, cwd, lockFlag string, modules []string) error {
 	env, err := readGoEnv(goBin, cwd)
 	if err != nil {
 		return err

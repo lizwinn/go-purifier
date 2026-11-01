@@ -40,18 +40,30 @@ func findLockRoot(dir string) (string, bool) {
 // of a command's arguments. A lockfile outside the source tree lets a
 // project whose author does not use go-purifier be locked and built.
 func lockfileFlag(args []string) (string, []string, error) {
+	return pathFlag("--lockfile", args)
+}
+
+// toolLockfileFlag takes --tool-lockfile <path> out of the arguments of a
+// command: the go.sum of an external build, kept outside the source tree.
+func toolLockfileFlag(args []string) (string, []string, error) {
+	return pathFlag("--tool-lockfile", args)
+}
+
+// pathFlag takes the flag name and its path out of args, as an absolute
+// path, and returns the other arguments.
+func pathFlag(name string, args []string) (string, []string, error) {
 	var path string
 	var rest []string
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
-		case a == "--lockfile":
+		case a == name:
 			if i+1 == len(args) {
-				return "", nil, errors.New("--lockfile needs a path")
+				return "", nil, fmt.Errorf("%s needs a path", name)
 			}
 			path = args[i+1]
 			i++
-		case strings.HasPrefix(a, "--lockfile="):
-			path = strings.TrimPrefix(a, "--lockfile=")
+		case strings.HasPrefix(a, name+"="):
+			path = strings.TrimPrefix(a, name+"=")
 		default:
 			rest = append(rest, a)
 		}
@@ -83,6 +95,34 @@ func lockPathAt(root, flag string) string {
 	return filepath.Join(root, lockFileName)
 }
 
+// toolLockPath is the go.sum of an external build: the one a flag or
+// GO_PURIFIER_TOOL_LOCKFILE names, or "" for the go.sum in the source
+// tree.
+func toolLockPath(flag string) string {
+	if flag != "" {
+		return flag
+	}
+	if env := os.Getenv("GO_PURIFIER_TOOL_LOCKFILE"); env != "" {
+		if filepath.IsAbs(env) {
+			return env
+		}
+		if cwd, err := os.Getwd(); err == nil {
+			return filepath.Join(cwd, env)
+		}
+	}
+	return ""
+}
+
+// toolLockOverrides maps the definition file go.sum to the go.sum that
+// GO_PURIFIER_TOOL_LOCKFILE names, for the digest of definitionHash, or is
+// empty without it.
+func toolLockOverrides() map[string]string {
+	if path := toolLockPath(""); path != "" {
+		return map[string]string{"go.sum": path}
+	}
+	return nil
+}
+
 // findUp is the nearest directory at or above dir that holds a file name.
 func findUp(dir, name string) (string, bool) {
 	for {
@@ -102,12 +142,16 @@ func findUp(dir, name string) (string, bool) {
 // of a line per file, in sorted order: the file's path, a space, and the
 // file's SHA-256 in hex, or "absent" for a missing file. nix/lib/lock.nix
 // computes the same digest with builtins.hashFile.
-func definitionHash(root string, files []string) (string, error) {
+func definitionHash(root string, files []string, overrides map[string]string) (string, error) {
 	sorted := append([]string(nil), files...)
 	sort.Strings(sorted)
 	h := sha256.New()
 	for _, name := range sorted {
-		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(name)))
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if override, ok := overrides[name]; ok {
+			path = override
+		}
+		data, err := os.ReadFile(path)
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
 			fmt.Fprintf(h, "%s absent\n", name)

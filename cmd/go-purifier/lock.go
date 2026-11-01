@@ -169,8 +169,12 @@ func lockCommand(args []string) error {
 	if err != nil {
 		return err
 	}
+	toolFlag, args, err := toolLockfileFlag(args)
+	if err != nil {
+		return err
+	}
 	if len(args) > 0 {
-		return fmt.Errorf("usage: go-purifier lock [--lockfile <path>]")
+		return fmt.Errorf("usage: go-purifier lock [--lockfile <path>] [--tool-lockfile <path>]")
 	}
 	goBin, err := realGo()
 	if err != nil {
@@ -180,7 +184,9 @@ func lockCommand(args []string) error {
 	if err != nil {
 		return err
 	}
-	return lockAt(goBin, cwd, lockFlag)
+	return withToolLock(goBin, cwd, toolFlag, func() error {
+		return lockAt(goBin, cwd, lockFlag)
+	})
 }
 
 // lockAt locks the module or workspace of directory dir into the lockfile
@@ -376,7 +382,7 @@ func makeLock(goBin, root string, workspace bool, proxy string, settings lockSet
 	if lock.DefinitionFiles, err = definitionFiles(root, workspace, dirs); err != nil {
 		return nil, err
 	}
-	if lock.DefinitionHash, err = definitionHash(root, lock.DefinitionFiles); err != nil {
+	if lock.DefinitionHash, err = definitionHash(root, lock.DefinitionFiles, nil); err != nil {
 		return nil, err
 	}
 

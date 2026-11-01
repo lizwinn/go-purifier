@@ -12,6 +12,9 @@
 #              that matches, as a lockfile that misses an entry would be
 #   malformed  a lockfile that is not JSON
 #   external   a source tree with no lockfile, and the lockfile beside it
+#   external-go-sum
+#              a source tree with no lockfile and an empty go.sum, and the
+#              lockfile and the complete go.sum beside it
 #   version    a lockfile of another format version
 #
 # Run it after locking the hello fixture again; CI checks that the committed
@@ -65,6 +68,11 @@ printf '{ "version": 1,\n' > "$out/malformed/go-purifier.lock.json"
 
 copy external src
 mv "$out/external/src/go-purifier.lock.json" "$out/external/go-purifier.lock.json"
+
+copy external-go-sum src
+mv "$out/external-go-sum/src/go-purifier.lock.json" "$out/external-go-sum/go-purifier.lock.json"
+mv "$out/external-go-sum/src/go.sum" "$out/external-go-sum/go.sum"
+: > "$out/external-go-sum/src/go.sum"
 
 copy version
 edit_lock "$out/version/go-purifier.lock.json" 'lock["version"] = 99'

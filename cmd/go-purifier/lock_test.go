@@ -207,12 +207,12 @@ func TestDefinitionHash(t *testing.T) {
 	dir := t.TempDir()
 	files := []string{"go.mod", "go.sum"}
 	writeFiles(t, dir, map[string]string{"go.mod": "module example.com/m\n"})
-	withoutSum, err := definitionHash(dir, files)
+	withoutSum, err := definitionHash(dir, files, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeFiles(t, dir, map[string]string{"go.sum": ""})
-	withEmptySum, err := definitionHash(dir, files)
+	withEmptySum, err := definitionHash(dir, files, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,14 +220,14 @@ func TestDefinitionHash(t *testing.T) {
 		t.Error("a missing go.sum and an empty one have the same definition hash")
 	}
 	writeFiles(t, dir, map[string]string{"go.mod": "module example.com/m\n\ngo 1.24\n"})
-	changed, err := definitionHash(dir, files)
+	changed, err := definitionHash(dir, files, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if changed == withEmptySum {
 		t.Error("changing go.mod left the definition hash unchanged")
 	}
-	reordered, err := definitionHash(dir, []string{"go.sum", "go.mod"})
+	reordered, err := definitionHash(dir, []string{"go.sum", "go.mod"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -82,7 +82,7 @@ func publishCommand(args []string) error {
 	if err != nil {
 		return fmt.Errorf("a release builds from the lockfile: %w", err)
 	}
-	if current, err := definitionHash(root, lock.DefinitionFiles); err != nil {
+	if current, err := definitionHash(root, lock.DefinitionFiles, toolLockOverrides()); err != nil {
 		return err
 	} else if current != lock.DefinitionHash {
 		return errors.New("go.mod, go.sum or go.work changed since the lockfile was written; run `go-purifier lock` and commit the lockfile first")

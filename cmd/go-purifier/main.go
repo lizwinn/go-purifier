@@ -42,7 +42,10 @@ Commands:
                      same as invoking this binary as "go"
 
 --lockfile names a lockfile outside the source tree. The go command takes
-it from GO_PURIFIER_LOCKFILE.
+it from GO_PURIFIER_LOCKFILE. For lock and update, --tool-lockfile names a
+go.sum outside the source tree, which they write in place of the go.sum
+in the tree; the go command takes it from GO_PURIFIER_TOOL_LOCKFILE for
+its check of the lockfile.
 
 Environment:
   GO_PURIFIER_GO       the go command to run (the flake's wrapper sets it)
@@ -52,6 +55,8 @@ Environment:
                        is the first proxy URL in GOPROXY, or
                        https://proxy.golang.org
   GO_PURIFIER_LOCKFILE the lockfile, when it lies outside the source tree
+  GO_PURIFIER_TOOL_LOCKFILE
+                       the go.sum, when it lies outside the source tree
   GONOPROXY, GOPRIVATE the modules a lock fetches from version control
   GO_PURIFIER=0        run go without the locked downloads
 `
