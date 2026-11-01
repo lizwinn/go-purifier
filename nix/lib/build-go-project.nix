@@ -64,19 +64,20 @@ let
       inherit (pkgs) lib stdenv runCommand;
       lock = import ./lock.nix { inherit lockFile; };
 
-      # A source tree given as a path is read at evaluation, and a lockfile
-      # whose definition files have changed since it was written stops the
-      # build there. A source tree that is the output of a derivation, such
-      # as a fetcher, is not read at evaluation.
-      lockRoot = if modRoot == "" then src else src + "/${modRoot}";
-      currentLock =
-        if builtins.isPath src then
-          lock.checkCurrent {
-            root = lockRoot;
-            overrides = lib.optionalAttrs (goSum != null) { "go.sum" = goSum; };
-          }
-        else
-          lock;
+      # The lock in memory, which checkLock of the shared library fails
+      # with its problems: a lockfile that is missing, damaged, of another
+      # format version, or older than go.mod or go.sum.
+      checkedLock = purifier.checkLock (
+        import ./read-lock.nix {
+          inherit
+            src
+            modRoot
+            lockFile
+            goSum
+            ;
+        }
+      );
+      currentLock = builtins.seq checkedLock lock;
 
       # The go-purifier command, which makes the files of modules from
       # version control, built from this repository's own lockfile. Only a
@@ -123,6 +124,7 @@ let
           cli
           fetchers
           ;
+        entries = purifier.entriesFor stdenv.buildPlatform.system checkedLock;
       };
 
       goFlags =
@@ -240,7 +242,7 @@ let
         map (b: {
           inherit (b) name;
           value = mkPackage b;
-        }) lock.binaries
+        }) currentLock.binaries
       );
 
       # A gzipped tarball per command, named <command>_<os>_<arch>, or
@@ -276,7 +278,7 @@ let
         proxy
         lock
         ;
-      fetches = currentLock.entries;
+      fetches = checkedLock.entries;
     };
 in
 buildGoProject

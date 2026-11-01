@@ -12,6 +12,9 @@
   # The functions of the shared library.
   purifier,
   lockFile,
+  # The entries of the lock in memory for the build platform, from
+  # entriesFor of the shared library.
+  entries,
   # The go-purifier command, which makes the files of modules from version
   # control. Only a lockfile with such modules builds it.
   cli,
@@ -44,7 +47,9 @@ in
 # environment variable.
 runCommand "go-module-proxy"
   {
-    manifest = lib.concatMapStrings (a: "${a.path}\t${fetch a}\n") lock.files + vcsLines;
+    manifest =
+      lib.concatMapStrings (a: "${a.path}\t${fetch a}\n") (builtins.filter (a: a ? url) entries)
+      + vcsLines;
     passAsFile = [ "manifest" ];
     preferLocalBuild = true;
     allowSubstitutes = false;

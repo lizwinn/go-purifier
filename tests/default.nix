@@ -10,6 +10,7 @@
 {
   pkgs,
   buildGoProject,
+  readLock,
   overlay,
 }:
 let
@@ -173,6 +174,31 @@ in
     assert builtins.length hello.fetches == 8;
     assert builtins.all (e: e ? url && e ? mirrors && e ? hash) hello.fetches;
     runCommand "fixture-fetches" { } "touch $out";
+
+  # readLock gives the lock in memory of the purifier contract: the
+  # commands as outputs and the downloads as entries for a usable
+  # lockfile, and a problem that names the fix for each damaged one.
+  read-lock =
+    let
+      read = src: readLock { inherit src; };
+      hasProblem = src: text: builtins.any (lib.hasInfix text) (read src).problems;
+      helloLock = read ./fixtures/hello;
+      vcsLock = read ./fixtures/vcs;
+    in
+    assert helloLock.purifier == "go-purifier";
+    assert helloLock.problems == [ ];
+    assert
+      builtins.attrNames helloLock.outputs == [
+        "greet"
+        "uuidgen"
+      ];
+    assert helloLock.entries == hello.fetches;
+    assert builtins.any (e: e ? git) vcsLock.entries;
+    assert hasProblem ./fixtures/conformance/stale "run `go-purifier lock`";
+    assert hasProblem ./fixtures/conformance/tampered "contentHash does not match its content";
+    assert hasProblem ./fixtures/conformance/version "has lock format version 99";
+    assert hasProblem ./fixtures/conformance/external/src "there is no lockfile";
+    runCommand "read-lock" { } "touch $out";
 
   # A replace directive to a directory outside src fails the build, which
   # says to widen src.
