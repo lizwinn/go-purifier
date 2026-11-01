@@ -192,7 +192,10 @@ expected="hgmod svnmod bzrmod fossilmod"
 built=$(nix build --impure --no-link --print-out-paths --expr "
   let
     flake = builtins.getFlake \"path:$repo\";
-    pkgs = flake.legacyPackages.\${builtins.currentSystem};
+    pkgs = import flake.inputs.nixpkgs {
+      system = builtins.currentSystem;
+      overlays = [ flake.overlays.default ];
+    };
   in
   (pkgs.buildGoProject { src = /. + \"$consumer\"; }).packages.vcssystems
 ")

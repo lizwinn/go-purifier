@@ -1,19 +1,20 @@
 # SPDX-License-Identifier: MIT
 #
-# Checks every pull request and every push to main.
+# Checks every pull request and every push to main, on x86_64-linux and
+# aarch64-linux.
 #
 # `flake-check` builds the flake's checks: every fixture offline from its
 # lockfile, the release archives, the go-purifier command with its unit
-# tests, and the formatting. It also evaluates the checks for
-# aarch64-linux.
+# tests, the real-world projects, and the formatting.
 #
 # `outside-the-sandbox` runs what needs Nix, servers or the network and so
-# cannot run in the Nix sandbox: interactive mode (tests/interactive.sh),
-# the release command (tests/release.sh), modules from Mercurial,
-# Subversion, Bazaar and Fossil repositories served on the runner
-# (tests/vcs-systems.sh), and the lock itself, which relocks this
-# repository and every fixture from the module proxy and from git and
-# fails when a lockfile differs from the committed one.
+# cannot run in the Nix sandbox: interactive mode with gopls and the loop
+# of upgrading a dependency (tests/interactive.sh), the errors of common
+# lockfile mistakes (tests/negative.sh), the release command
+# (tests/release.sh), modules from Mercurial, Subversion, Bazaar and
+# Fossil repositories served on the runner (tests/vcs-systems.sh), and the
+# lock itself, which relocks this repository and every fixture and fails
+# unless each lockfile comes out byte for byte as committed.
 name: check
 
 on:
@@ -26,17 +27,23 @@ permissions:
 
 jobs:
   flake-check:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
       - name: Build the checks
         run: nix flake check --print-build-logs
-      - name: Evaluate the checks for every system
-        run: nix flake check --all-systems --no-build
 
   outside-the-sandbox:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
@@ -44,6 +51,8 @@ jobs:
         run: nix build .#toolchain --out-link toolchain
       - name: Interactive mode
         run: tests/interactive.sh toolchain/bin
+      - name: Errors of common lockfile mistakes
+        run: tests/negative.sh toolchain/bin
       - name: Release
         run: tests/release.sh toolchain/bin
       - name: Modules from Mercurial, Subversion, Bazaar and Fossil
@@ -54,6 +63,4 @@ jobs:
             (cd "$dir" && "$GITHUB_WORKSPACE/toolchain/bin/go-purifier" relock)
           done
       - name: Compare with the committed lockfiles
-        run: |
-          # The go version is recorded for reference and follows nixpkgs.
-          git diff --exit-code -I '"goVersion"' -- '*.lock.json'
+        run: git diff --exit-code -- '*.lock.json'

@@ -306,7 +306,11 @@ func realize(root, lockPath string) (string, error) {
 	if nixpkgs := os.Getenv("GO_PURIFIER_NIXPKGS"); nixpkgs != "" {
 		args = append(args, "--argstr", "nixpkgs", nixpkgs)
 	}
-	if err := run("nix-build", args...); err != nil {
+	// nix-build prints the store path of the tree on standard output, which
+	// is the output of the go command the user ran.
+	build := exec.Command("nix-build", args...)
+	build.Stderr = os.Stderr
+	if err := build.Run(); err != nil {
 		return "", err
 	}
 	if err := os.WriteFile(stampPath, []byte(stamp), 0o644); err != nil {

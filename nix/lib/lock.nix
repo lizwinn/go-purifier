@@ -7,7 +7,9 @@
 # string.
 { lockFile }:
 let
-  lock = builtins.fromJSON (builtins.readFile lockFile);
+  lock = builtins.addErrorContext "while reading the go-purifier lockfile ${toString lockFile}; when it is damaged, run `go-purifier relock` to write it again" (
+    builtins.fromJSON (builtins.readFile lockFile)
+  );
 
   supportedVersion = import ./lock-version.nix;
 

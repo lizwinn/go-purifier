@@ -149,10 +149,32 @@ go command in the build then runs with `GOPROXY=file://<that tree>`,
 module, so `GOPRIVATE` does not send the go command to version control.
 `go.sum` still verifies every module.
 
+Commands that change the dependencies, such as `go get`, `go mod tidy`,
+`go install pkg@version` and `go list -m -u`, read the locked downloads
+first and then your own `GOPROXY`, so they can add modules the lockfile
+does not hold yet. The next command then warns that the lockfile is stale;
+run `go-purifier lock`, and the build is offline again.
+
+The development shell also has gopls. gopls runs the `go` on its `PATH`,
+so an editor that starts it from the shell resolves from the same locked
+downloads, offline.
+
 A build without a lockfile resolves the usual way. When a file that
 defines the dependencies changed since the lockfile was written, go warns
 and resolves the usual way until `go-purifier lock` renews the lockfile.
 `GO_PURIFIER=0` turns interactive mode off.
+
+## When something is wrong
+
+| Mistake | What happens |
+|---|---|
+| `go.mod`, `go.sum` or `go.work` changed after the lock | `buildGoProject` stops at evaluation and says to run `go-purifier lock`. The `go` wrapper warns, and resolves the usual way. |
+| A download is missing from the lockfile | The go command fails to read it from the proxy tree, and both the Nix build and the `go` wrapper add a hint to run `go-purifier relock`. |
+| A hash in the lockfile was edited | Nix reports a hash mismatch for that download. |
+| The lockfile is not valid JSON | The `go` wrapper names the file and says to run `go-purifier relock`; the Nix build names the file in its error. |
+| The lockfile has another format version | Both name the version and say to run `go-purifier relock`. |
+
+`tests/negative.sh` checks each of these.
 
 ## Releases
 
@@ -210,3 +232,29 @@ asks the lock proxy for the new version so the proxy caches it.
   steps are `git push`, `gh release create` and `go list -m` of the new
   version. The build, the archives and the tag that come before it are
   checked by `tests/release.sh`.
+
+## Tests
+
+CI runs every test on x86_64-linux and aarch64-linux, on each pull
+request and each push to main.
+
+- `go test ./...` holds the unit tests of the lock run: the lockable
+  files, the proxy paths and URLs, the git origins and the entry of each
+  version control system, the revision of a pseudo-version, the
+  definition digest, the module zips, the release tags, and the `go`
+  wrapper.
+- `nix flake check` builds each fixture under `tests/fixtures` offline
+  from its lockfile and runs it. The fixtures cover proxy modules
+  (`hello`), a workspace (`workspace`), a local `replace` (`replace`) and
+  modules fetched from git (`vcs`). The checks also cover the release
+  archives, the error for a `replace` outside `src`, and the lock format
+  version.
+- `tests/interactive.sh` runs the `go` wrapper and gopls offline, and the
+  loop of upgrading a dependency and relocking.
+- `tests/negative.sh` checks the error of each mistake in the table above.
+- `tests/release.sh` releases a fixture in a scratch repository.
+- `tests/vcs-systems.sh` serves modules from Mercurial, Subversion, Bazaar
+  and Fossil repositories on the host, and locks, builds and runs a module
+  that requires all four.
+- CI relocks this repository and every fixture, and fails unless each
+  lockfile comes out byte for byte as committed.

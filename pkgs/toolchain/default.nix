@@ -8,8 +8,9 @@
 #
 # Both take the clients of the version control systems the go command
 # fetches modules with (git, Mercurial, Subversion, Breezy for Bazaar, and
-# Fossil), and nix-prefetch-git for locking git modules, from the end of
-# PATH, so the user's own clients come first. Locking and realizing
+# Fossil), nix-prefetch-git for locking git modules, and Nix itself, for an
+# editor that starts gopls without Nix on its PATH, from the end of PATH,
+# so the tools the user installed come first. Locking and realizing
 # checkouts of the other systems, and `go-purifier release`, use the
 # nixpkgs of this package set.
 {
@@ -23,6 +24,7 @@
   breezy,
   fossil,
   nix-prefetch-git,
+  nix,
   path,
   cli,
 }:
@@ -47,6 +49,7 @@ let
       breezy
       fossil
       nix-prefetch-git
+      nix
     ])
   ];
 in
