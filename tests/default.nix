@@ -34,6 +34,21 @@ let
   # of its repository, one in a subdirectory of a repository of several
   # modules.
   vcs = build { src = ./fixtures/vcs; };
+  # fzf from its GitHub source, which holds no go-purifier lockfile, with
+  # the version and revision its Makefile sets.
+  fzf = build {
+    src = pkgs.fetchFromGitHub {
+      owner = "junegunn";
+      repo = "fzf";
+      rev = "c0a193e031f01fb50bf6f7be4381990a3753f7cf";
+      hash = "sha256-+v3oSlf3HBpPkNqS3QxRV/B1yHYb07/a70WYuS0aopY=";
+    };
+    lockFile = ./real-world/fzf/go-purifier.lock.json;
+    ldflags = [
+      "-X main.version=0.74.5"
+      "-X main.revision=c0a193e0"
+    ];
+  };
   # A source tree with no lockfile, built from a lockfile kept beside it.
   external = build {
     src = ./fixtures/conformance/external/src;
@@ -117,6 +132,18 @@ in
     prints "conformance-external"
       "printf 'name = \"Nix\"\\nlanguage = \"de\"\\n' | ${lib.getExe external.packages.greet}"
       "Hello, Nix (German)";
+
+  # fzf v0.74.5, a real-world project, built from its GitHub source with a
+  # lockfile kept in this repository (tests/real-world/fzf). The check
+  # runs fzf's filter mode and its unit tests.
+  real-world-fzf =
+    prints "real-world-fzf"
+      "printf 'apple\\nbanana\\ncherry\\n' | ${lib.getExe fzf.packages.fzf} --filter nan"
+      "banana";
+  real-world-fzf-version =
+    prints "real-world-fzf-version" "${lib.getExe fzf.packages.fzf} --version"
+      "0.74.5 (c0a193e0)";
+  real-world-fzf-tests = fzf.tests;
 
   fixture-hello-greet =
     prints "fixture-hello-greet"

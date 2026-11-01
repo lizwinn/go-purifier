@@ -55,9 +55,9 @@ let
       # as pkg-config and a C library. The lockfile holds Go modules only.
       buildInputs ? [ ],
       nativeBuildInputs ? [ ],
-      # Filters src before it is copied into the store, as the `filter` of
-      # builtins.path. The default leaves out VCS and editor state, result
-      # links and the GC roots of go-purifier.
+      # Filters a src that is a path before it is copied into the store, as
+      # the `filter` of builtins.path. The default leaves out VCS and editor
+      # state, result links and the GC roots of go-purifier.
       srcFilter ? null,
     }:
     let
@@ -107,14 +107,22 @@ let
           || name == ".go-purifier"
           || name == ".idea"
           || name == ".vscode"
-          || lib.hasPrefix "result" name
+          # The out links of nix build, such as result and result-man, are
+          # symlinks. A Go file such as result.go stays.
+          || (type == "symlink" && lib.hasPrefix "result" name)
         );
 
-      filteredSrc = builtins.path {
-        path = src;
-        name = "go-source";
-        filter = if srcFilter != null then srcFilter else defaultSrcFilter;
-      };
+      # A source tree that is the output of a derivation, such as a fetcher,
+      # is used as it is: filtering it would build it at evaluation.
+      filteredSrc =
+        if builtins.isPath src then
+          builtins.path {
+            path = src;
+            name = "go-source";
+            filter = if srcFilter != null then srcFilter else defaultSrcFilter;
+          }
+        else
+          src;
 
       proxy = import ./proxy.nix {
         inherit

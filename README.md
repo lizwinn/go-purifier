@@ -200,8 +200,16 @@ These sources are refused or unsupported:
 
 ## Real-world projects
 
-None yet. A build of [fzf](https://github.com/junegunn/fzf) v0.74.5 from a
-lockfile outside its tree is planned as the first.
+[fzf](https://github.com/junegunn/fzf) v0.74.5 builds from its GitHub
+source, which holds no go-purifier lockfile, with a lockfile kept in this
+repository at `tests/real-world/fzf/go-purifier.lock.json`. The flake's
+checks `real-world-fzf`, `real-world-fzf-version` and
+`real-world-fzf-tests` run its filter mode, print its version, and run its
+unit tests in the sandbox. CI locks fzf again and fails unless the
+lockfile comes out byte for byte as committed. The build is a
+`buildGoProject` call with the source fetched from GitHub, `lockFile`, and
+the `-X main.version` and `-X main.revision` flags of fzf's Makefile as
+`ldflags`. It is in `tests/default.nix`.
 
 ## Credits
 

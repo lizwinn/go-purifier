@@ -11,9 +11,9 @@
 # The conformance checks that need the network or the Nix daemon run as
 # jobs of the same names:
 #
-# - `conformance-relock` locks this repository and every fixture again,
-#   writes the conformance fixtures again, and fails unless every file
-#   comes out byte for byte as committed.
+# - `conformance-relock` locks this repository, every fixture and fzf
+#   again, writes the conformance fixtures again, and fails unless every
+#   file comes out byte for byte as committed.
 # - `conformance-rebuild` builds the hello fixture a second time with
 #   `nix build --rebuild`, which fails unless the output is the same.
 # - `conformance-offline` runs `go-purifier prefetch` on each fixture, then
@@ -67,6 +67,11 @@ jobs:
           for dir in . tests/fixtures/hello tests/fixtures/workspace tests/fixtures/replace/app tests/fixtures/vcs; do
             (cd "$dir" && "$GITHUB_WORKSPACE/toolchain/bin/go-purifier" lock)
           done
+      - name: Lock fzf again, into the lockfile kept in this repository
+        run: |
+          git clone --quiet --depth 1 --branch v0.74.5 https://github.com/junegunn/fzf "$RUNNER_TEMP/fzf"
+          test "$(git -C "$RUNNER_TEMP/fzf" rev-parse HEAD)" = c0a193e031f01fb50bf6f7be4381990a3753f7cf
+          (cd "$RUNNER_TEMP/fzf" && "$GITHUB_WORKSPACE/toolchain/bin/go-purifier" lock --lockfile "$GITHUB_WORKSPACE/tests/real-world/fzf/go-purifier.lock.json")
       - name: Write the conformance fixtures again
         run: tests/conformance-fixtures.sh
       - name: Compare with the committed files

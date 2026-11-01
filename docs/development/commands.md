@@ -51,6 +51,7 @@ file. After a change to the hello fixture, run
 | `workspace` | a `go.work` workspace of two modules |
 | `replace` | a `replace` directive to a directory next to the lock root (`modRoot = "app"`) |
 | `vcs` | modules fetched from git through `GONOPROXY`, one in a repository subdirectory |
+| `real-world/fzf` | the lockfile of fzf v0.74.5, which `tests/default.nix` builds from its GitHub source; lock it again from a clone of the tag with `go-purifier lock --lockfile <this repository>/tests/real-world/fzf/go-purifier.lock.json` |
 | `conformance/*` | copies of `hello` with a stale, hand-edited, incomplete, malformed, missing or foreign-version lockfile, written by `tests/conformance-fixtures.sh` |
 
 `tests/vcs-systems.sh` makes its Mercurial, Subversion, Bazaar and Fossil
