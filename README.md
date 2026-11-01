@@ -200,17 +200,70 @@ These sources are refused or unsupported:
 
 ## Examples
 
-CI locks and builds [fzf](https://github.com/junegunn/fzf) v0.74.5 as an
-example of an external build. fzf's source on GitHub holds no go-purifier
-lockfile, and this repository keeps one for it at
-`tests/real-world/fzf/go-purifier.lock.json`. The build in
-`tests/default.nix` is a `buildGoProject` call with the source fetched
-from GitHub, that `lockFile`, and the `-X main.version` and
-`-X main.revision` flags of fzf's Makefile as `ldflags`. The flake's
-checks `real-world-fzf`, `real-world-fzf-version` and
-`real-world-fzf-tests` run fzf's filter mode, print its version, and run
-its unit tests in the sandbox. CI also locks fzf again and fails unless
-the lockfile comes out byte for byte as committed.
+### fzf
+
+To build [fzf](https://github.com/junegunn/fzf) from a clone of its
+repository, lock it in the clone:
+
+```zsh
+git clone https://github.com/junegunn/fzf
+cd fzf
+nix run github:nix-purifiers/go-purifier -- lock
+```
+
+Then add a `flake.nix` next to `go.mod`. fzf's Makefile passes the version
+to the linker, so the flake does the same with `ldflags`:
+
+```nix
+{
+  inputs.go-purifier.url = "github:nix-purifiers/go-purifier";
+  inputs.nixpkgs.follows = "go-purifier/nixpkgs";
+
+  outputs = { nixpkgs, go-purifier, ... }:
+    let
+      system = "x86_64-linux";
+      build = go-purifier.lib.go-purifier.buildGoProject {
+        pkgs = nixpkgs.legacyPackages.${system};
+        src = ./.;
+        ldflags = [ "-X main.version=0.74.5" ];
+      };
+    in
+    {
+      packages.${system}.default = build.packages.fzf;
+      checks.${system}.tests = build.tests;
+    };
+}
+```
+
+A flake reads only the files git tracks, so add both files with
+`git add go-purifier.lock.json flake.nix`. `nix build` then builds fzf,
+and `nix flake check` runs its tests in the sandbox.
+
+To package fzf without changing its repository, keep the lockfile in your
+own flake instead. Run the lock in a clone at the tag you package, and
+write the lockfile next to your `flake.nix`:
+
+```zsh
+git clone --branch v0.74.5 https://github.com/junegunn/fzf
+cd fzf
+nix run github:nix-purifiers/go-purifier -- lock --lockfile ~/my-flake/fzf.lock.json
+```
+
+Your flake then fetches the source and passes the lockfile:
+
+```nix
+build = go-purifier.lib.go-purifier.buildGoProject {
+  inherit pkgs;
+  src = pkgs.fetchFromGitHub {
+    owner = "junegunn";
+    repo = "fzf";
+    rev = "v0.74.5";
+    hash = "sha256-+v3oSlf3HBpPkNqS3QxRV/B1yHYb07/a70WYuS0aopY=";
+  };
+  lockFile = ./fzf.lock.json;
+  ldflags = [ "-X main.version=0.74.5" ];
+};
+```
 
 ## Credits
 
