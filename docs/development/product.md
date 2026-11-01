@@ -21,14 +21,21 @@ repositories with `--ignore-externals --ignore-keywords`.
 
 - The go-purifier command (`cmd/go-purifier`). `root.go` finds the lock
   root and hashes the files that define the dependencies. `lock.go` is
-  the lock run and the lockfile format. `vcs.go` turns the modules the go
-  command fetched from version control into checkout entries, and is the
-  `module-files` builder that makes their `.mod` and `.zip` files. `wrapper.go` is
-  interactive mode, where the same binary runs as `go`, and the
-  `link-tree` builder of its proxy tree. `release.go` is
-  `go-purifier release`.
-- The Nix library (`nix/lib`). `lock.nix` reads a lockfile and rejects
-  other format versions, and checks the definition digest. `prefetch.nix`
+  the lock run and the lockfile format, and `contentHash.go` is the digest
+  of the lockfile's own content. `update.go` is `go-purifier update`.
+  `vcs.go` turns the modules the go command fetched from version control
+  into checkout entries, and is the `module-files` builder that makes
+  their `.mod` and `.zip` files. `wrapper.go` is interactive mode, where
+  the same binary runs as `go`, and the `link-tree` builder of its proxy
+  tree. `prefetch.go` is `go-purifier prefetch`, and `publish.go` is
+  `go-purifier publish`.
+- The Nix library (`nix/lib`). `lock.nix` reads a lockfile, makes the file
+  entries from its proxy paths, and finds its problems: a missing file,
+  another format version, a content that does not match its contentHash,
+  and a changed definition digest. `read-lock.nix` is
+  `lib.go-purifier.readLock`, the lock in memory of the purifier contract,
+  which the builder checks with `checkLock` of the shared library.
+  `prefetch.nix`
   is what the lock run builds to learn the hash of a checkout that is not
   a git checkout. The files that `nix-build` evaluates directly
   (`realize.nix`, `prefetch.nix`, `release.nix`) import the shared library
@@ -38,18 +45,19 @@ repositories with `--ignore-externals --ignore-keywords`.
   proxy tree for the sandbox, and `realize.nix` builds it for interactive
   mode, importing nixpkgs only for checkouts from Mercurial, Subversion,
   Bazaar or Fossil repositories. `build-go-project.nix` is
-  `buildGoProject`, and
-  `release.nix` is what `go-purifier release` builds.
+  `lib.go-purifier.buildGoProject`, and `release.nix` is what
+  `go-purifier publish` builds.
 - The packages (`pkgs`). `cli` is the go-purifier command, built by
   `buildGoProject` from this repository's own lockfile. `toolchain` is the
-  nixpkgs go toolchain with `go` replaced by the go-purifier wrapper, and
-  git and nix-prefetch-git at the end of its `PATH`.
+  nixpkgs go toolchain with `go` replaced by the go-purifier wrapper, with
+  gopls, and with git, Mercurial, Subversion, Breezy, Fossil,
+  nix-prefetch-git and nix at the end of its `PATH`.
 
 ## How the outputs are known
 
 The lock run records the main packages of the main modules in the
-lockfile's `binaries`. `buildGoProject` reads them with
-`builtins.fromJSON`, so every command is an attribute
-(`packages.<name>`) at evaluation time, with no import-from-derivation.
+lockfile's `binaries`. `readLock` reads them with `builtins.fromJSON`
+into its `outputs`, so every command is an attribute (`packages.<name>`)
+at evaluation time, with no import-from-derivation.
 A Go library has no built artifact: it is published as source by tagging
 a commit.
