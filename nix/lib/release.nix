@@ -16,8 +16,8 @@
   # The go-purifier command, as an absolute path into the store, for
   # modules from version control.
   cli,
-  # The nix/lib directory of the shared library, which the toolchain links
-  # into the go-purifier Nix library as `purifier`.
+  # The source of the shared library, which the toolchain links into the
+  # go-purifier Nix library as `purifier`.
   purifierLib ? ./purifier,
 }:
 let

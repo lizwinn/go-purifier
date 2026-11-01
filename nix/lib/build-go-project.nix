@@ -28,9 +28,8 @@
   runCommand,
   callPackage,
   go,
-  # The nix/lib directory of the shared library of the nix-purifiers, whose
-  # fetchEntry fetches the locked downloads. The go-purifier overlay passes
-  # it.
+  # The source of the shared library of the nix-purifiers, whose fetchEntry
+  # fetches the locked downloads. The go-purifier overlay passes it.
   purifierLib,
   # The go-purifier package scope, whose `cli` makes the files of modules
   # from version control. It is null where the overlay is not applied; a

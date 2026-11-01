@@ -7,7 +7,7 @@
 # lockfile among its arguments; buildGoProject's `proxy` is this.
 #
 # The entries are fetched with fetchEntry of the shared library of the
-# nix-purifiers, whose nix/lib directory is purifierLib.
+# nix-purifiers, whose source is purifierLib.
 {
   lib,
   pkgs,

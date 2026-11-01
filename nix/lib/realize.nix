@@ -7,9 +7,11 @@
 # that keeps them all alive.
 #
 # The entries are fetched with fetchEntry of the shared library of the
-# nix-purifiers and the fetchers of the nixpkgs the go-purifier flake was
-# built with. The go-purifier command that runs the wrapper is the builder
-# of the tree and of the module files.
+# nix-purifiers. A file entry needs only Nix's built-in fetcher; a checkout
+# needs the fetchers of the nixpkgs the go-purifier flake was built with,
+# so a lockfile with only proxy files never imports its package set. The
+# go-purifier command that runs the wrapper is the builder of the tree and
+# of the module files.
 {
   # The lockfile, as an absolute path.
   lockFile,
@@ -18,16 +20,16 @@
   # The nixpkgs the go-purifier flake was built with.
   nixpkgs,
   libDir ? ./.,
-  # The nix/lib directory of the shared library, which the toolchain links
-  # into the go-purifier Nix library as `purifier`.
+  # The source of the shared library, which the toolchain links into the
+  # go-purifier Nix library as `purifier`.
   purifierLib ? libDir + "/purifier",
 }:
 let
-  pkgs = import nixpkgs { };
   lock = import (libDir + "/lock.nix") { inherit lockFile; };
-  fetch = (import (purifierLib + "/default.nix") { inherit (pkgs) lib; }).fetchEntry {
-    inherit pkgs;
-  };
+  inherit ((import (purifierLib + "/default.nix") { lib = import (nixpkgs + "/lib"); })) fetchEntry;
+  fetchFile = fetchEntry { };
+  fetchCheckout = fetchEntry { pkgs = import nixpkgs { }; };
+  fetch = entry: if entry ? url then fetchFile entry else fetchCheckout entry;
   # The store object of the command, and the path of the command inside
   # it. storePath adds the store object to the string context of the
   # path, so the builds that run the command may read it.

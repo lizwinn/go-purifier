@@ -19,7 +19,7 @@ in
     packages final prev
     // {
       buildGoProject = final.callPackage ../../nix/lib/build-go-project.nix {
-        purifierLib = "${closure-inputs.purifier}/nix/lib";
+        purifierLib = "${closure-inputs.purifier}";
       };
     };
 }

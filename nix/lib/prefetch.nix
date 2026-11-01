@@ -10,8 +10,8 @@
   nixpkgs,
   # The entry, as JSON, without its hash.
   entry,
-  # The nix/lib directory of the shared library, which the toolchain links
-  # into the go-purifier Nix library as `purifier`.
+  # The source of the shared library, which the toolchain links into the
+  # go-purifier Nix library as `purifier`.
   purifierLib ? ./purifier,
 }:
 let

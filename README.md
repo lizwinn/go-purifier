@@ -208,11 +208,13 @@ asks the lock proxy for the new version so the proxy caches it.
   that made it. Every go command runs with `GOTOOLCHAIN=local`.
 - **Downloads go through the shared library.** Every entry is fetched with
   `fetchEntry` of [purifier](https://github.com/nix-purifiers/purifier),
-  the library of the nix-purifiers, and the nixpkgs fetchers it uses. The
-  sandboxed build and interactive mode use the same library and the same
-  nixpkgs, the one the go-purifier flake pins, so they fetch the same
-  store paths. The go-purifier command builds the proxy tree of
-  interactive mode and the files of modules from version control.
+  the library of the nix-purifiers. The sandboxed build and interactive
+  mode use the same library and the nixpkgs the go-purifier flake pins, so
+  they fetch the same store paths. Interactive mode fetches proxy files
+  with Nix's built-in fetcher, and imports the nixpkgs package set only
+  for a lockfile with repository checkouts. The go-purifier command builds
+  the proxy tree of interactive mode and the files of modules from version
+  control.
 
 ## Limits
 
