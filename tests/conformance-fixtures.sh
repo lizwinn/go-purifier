@@ -28,7 +28,7 @@ out="$tests/fixtures/conformance"
 copy() {
   rm -rf "${out:?}/$1"
   mkdir -p "$out/$1"
-  cp -r "$hello/." "$out/$1/${2:-}"
+  cp -R "$hello/." "$out/$1/${2:-}"
   # Leaves out the GC roots that a prefetch of the hello fixture writes.
   rm -rf "$out/$1/${2:-}/.go-purifier"
 }

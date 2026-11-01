@@ -26,7 +26,7 @@ unset GOPROXY GONOPROXY GOPRIVATE GOWORK
 # A copy of the hello fixture, writable.
 fixture() {
   rm -rf "$tmp/$1"
-  cp -r "$tests/fixtures/hello" "$tmp/$1"
+  cp -R "$tests/fixtures/hello" "$tmp/$1"
   chmod -R u+w "$tmp/$1"
   echo "$tmp/$1"
 }

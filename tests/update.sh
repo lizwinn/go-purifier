@@ -23,7 +23,7 @@ export XDG_CACHE_HOME="$tmp/cache" GOPATH="$tmp/gopath" GOCACHE="$tmp/gocache" G
 unset GOPROXY GONOPROXY GOPRIVATE GOWORK
 
 dir="$tmp/hello"
-cp -r "$tests/fixtures/hello" "$dir"
+cp -R "$tests/fixtures/hello" "$dir"
 chmod -R u+w "$dir"
 (cd "$dir" && "$bin/go-purifier" update github.com/BurntSushi/toml)
 

@@ -101,11 +101,22 @@ func publishCommand(args []string) error {
 	} else if dirty != "" {
 		fmt.Fprintln(os.Stderr, "go-purifier: the working tree has uncommitted changes; the release builds and tags HEAD without them")
 	}
-	modRel, err := filepath.Rel(top, modDir)
+	// git prints the top level with symlinks resolved, such as macOS's
+	// /private/var for /var, so the other two are resolved too before
+	// filepath.Rel compares them.
+	realModDir, err := filepath.EvalSymlinks(modDir)
 	if err != nil {
 		return err
 	}
-	rootRel, err := filepath.Rel(top, root)
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return err
+	}
+	modRel, err := filepath.Rel(top, realModDir)
+	if err != nil {
+		return err
+	}
+	rootRel, err := filepath.Rel(top, realRoot)
 	if err != nil {
 		return err
 	}
