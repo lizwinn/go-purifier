@@ -13,12 +13,12 @@ let
 
   supportedVersion = import ./lock-version.nix;
 
-  # A store path name from a tree path. Store path names allow
-  # [A-Za-z0-9+._?=-], must not start with a dot, and are at most 211
+  # A store path name from a module path and version. Store path names
+  # allow [A-Za-z0-9+._?=-], must not start with a dot, and are at most 211
   # characters; every other character becomes "_", and a long name keeps
-  # its end, where the version and the file type are. The go wrapper and
-  # the sandboxed build both name their fetches with this function, so they
-  # share store paths.
+  # its end, where the version is. The go wrapper and the sandboxed build
+  # both name the files of modules from version control with this
+  # function, so they share store paths.
   storeName =
     path:
     let
@@ -66,9 +66,6 @@ lock
       hashAlgo = "sha256";
       toHashFormat = "sri";
     } == lock.definitionHash;
-
-  # The fetch name of an entry: its tree path, made a valid store name.
-  artifactName = artifact: storeName artifact.path;
 
   # The file entries, which are proxy files, and every other entry, which
   # is a checkout of the repository of a module from version control.

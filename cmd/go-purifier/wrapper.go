@@ -284,9 +284,9 @@ func realize(root, lockPath string) (string, error) {
 		}
 	}
 
-	nixLib := os.Getenv("GO_PURIFIER_NIX_LIB")
-	if nixLib == "" {
-		return "", errors.New("GO_PURIFIER_NIX_LIB is not set; run go through the go-purifier flake (`nix develop` or `nix shell` of its `toolchain` package), or set GO_PURIFIER=0")
+	nixLib, nixpkgs := os.Getenv("GO_PURIFIER_NIX_LIB"), os.Getenv("GO_PURIFIER_NIXPKGS")
+	if nixLib == "" || nixpkgs == "" {
+		return "", errors.New("GO_PURIFIER_NIX_LIB or GO_PURIFIER_NIXPKGS is not set; run go through the go-purifier flake (`nix develop` or `nix shell` of its `toolchain` package), or set GO_PURIFIER=0")
 	}
 	self, err := os.Executable()
 	if err != nil {
@@ -302,10 +302,8 @@ func realize(root, lockPath string) (string, error) {
 	args := []string{filepath.Join(nixLib, "realize.nix"),
 		"--argstr", "lockFile", lockPath,
 		"--argstr", "cli", self,
+		"--argstr", "nixpkgs", nixpkgs,
 		"--out-link", proxyLink, "--quiet"}
-	if nixpkgs := os.Getenv("GO_PURIFIER_NIXPKGS"); nixpkgs != "" {
-		args = append(args, "--argstr", "nixpkgs", nixpkgs)
-	}
 	// nix-build prints the store path of the tree on standard output, which
 	// is the output of the go command the user ran.
 	build := exec.Command("nix-build", args...)

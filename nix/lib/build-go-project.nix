@@ -27,18 +27,16 @@
   stdenv,
   runCommand,
   callPackage,
-  fetchgit,
   go,
+  # The nix/lib directory of the shared library of the nix-purifiers, whose
+  # fetchEntry fetches the locked downloads. The go-purifier overlay passes
+  # it.
+  purifierLib,
   # The go-purifier package scope, whose `cli` makes the files of modules
   # from version control. It is null where the overlay is not applied; a
   # lockfile with such modules then needs `cli`.
   go-purifier ? null,
 }:
-let
-  # The `fetchgit` argument of the builder shadows the fetchgit of the
-  # package set.
-  defaultFetchgit = fetchgit;
-in
 {
   # The source tree. It holds the lock root, and every directory a replace
   # directive of the build points at.
@@ -52,9 +50,11 @@ in
   goToolchain ? go,
   # The go-purifier command, for modules from version control.
   cli ? (if go-purifier != null then go-purifier.cli else null),
-  # Replace the default fetchers; see fetch.nix.
+  # Replace nixpkgs' fetchurl and fetchgit, for credentials or mirrors.
+  # Each takes the arguments fetchEntry of the shared library passes to the
+  # nixpkgs fetcher of its name.
   fetchurl ? null,
-  fetchgit ? defaultFetchgit,
+  fetchgit ? null,
   # Runs `go test` on every package of the main modules after the build.
   doCheck ? false,
   # Passed to `go build` and `go test` as -tags and -ldflags.
@@ -130,6 +130,7 @@ let
 
   proxy = callPackage ./proxy.nix {
     inherit
+      purifierLib
       lockFile
       cli
       fetchurl
@@ -206,7 +207,7 @@ let
       runHook preInstall
       runHook postInstall
     '';
-    passthru = { inherit lock proxy; };
+    passthru = { inherit lock proxy purifierLib; };
     meta.description = "${lib.concatStringsSep ", " lock.modules}, built by go-purifier";
   };
 
@@ -217,7 +218,12 @@ let
     runCommand binary.name
       {
         passthru = {
-          inherit all lock proxy;
+          inherit
+            all
+            lock
+            proxy
+            purifierLib
+            ;
           goPackage = binary.package;
         };
         meta = {

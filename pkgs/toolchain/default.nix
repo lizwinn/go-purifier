@@ -29,13 +29,20 @@
   cli,
 }:
 let
+  # The go-purifier Nix library, with the shared library of the
+  # nix-purifiers that the command was built with linked in as `purifier`.
+  nixLib = runCommand "go-purifier-nix-lib" { } ''
+    cp -r ${../../nix/lib} $out
+    chmod u+w $out
+    ln -s ${cli.purifierLib} $out/purifier
+  '';
   wrapperArgs = lib.escapeShellArgs [
     "--set-default"
     "GO_PURIFIER_GO"
     "${go}/bin/go"
     "--set"
     "GO_PURIFIER_NIX_LIB"
-    "${../../nix/lib}"
+    "${nixLib}"
     "--set-default"
     "GO_PURIFIER_NIXPKGS"
     "${path}"

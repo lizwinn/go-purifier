@@ -7,8 +7,9 @@ downloads through the store. The README describes what it does for a
 user, including its decisions and limits.
 
 go-purifier is one of the nix-purifiers. Each purifier does the same for
-one build tool, and they share the kinds of download entry that
-`nix/lib/fetch.nix` lists: files, and checkouts of git, Mercurial,
+one build tool, and they share the kinds of download entry of the shared
+library, `github:nix-purifiers/purifier`, whose `fetchEntry` fetches every
+entry go-purifier writes: files, and checkouts of git, Mercurial,
 Subversion, Bazaar and Fossil repositories. For Go, the path of a file
 entry is its module proxy path, and the path of a checkout entry is a name
 under `vcs/` that the Go-specific `vcsModules` list refers to. A
@@ -27,9 +28,12 @@ repositories with `--ignore-externals --ignore-keywords`.
   `link-tree` builder of its proxy tree. `release.go` is
   `go-purifier release`.
 - The Nix library (`nix/lib`). `lock.nix` reads a lockfile and rejects
-  other format versions. `fetch.nix` fetches one entry, and `prefetch.nix`
+  other format versions, and checks the definition digest. `prefetch.nix`
   is what the lock run builds to learn the hash of a checkout that is not
-  a git checkout. `vcs-module.nix` is the derivation of the files of one
+  a git checkout. The files that `nix-build` evaluates directly
+  (`realize.nix`, `prefetch.nix`, `release.nix`) import the shared library
+  from `./purifier`, which the toolchain package links into its copy of
+  this directory. `vcs-module.nix` is the derivation of the files of one
   module from version control. `proxy.nix` builds the
   proxy tree for the sandbox, and `realize.nix` builds it for interactive
   mode, importing nixpkgs only for checkouts from Mercurial, Subversion,

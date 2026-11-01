@@ -5,36 +5,33 @@
 # control, each as a link into the store. The go command reads it as
 # GOPROXY=file://<this>. It is a package for callPackage, with the
 # lockfile among its arguments; buildGoProject's `proxy` is this.
+#
+# The entries are fetched with fetchEntry of the shared library of the
+# nix-purifiers, whose nix/lib directory is purifierLib.
 {
   lib,
+  pkgs,
   stdenv,
   runCommand,
+  purifierLib,
   lockFile,
   # The go-purifier command, which makes the files of modules from version
   # control. Only a lockfile with such modules needs it.
   cli ? null,
-  # The fetchers; see fetch.nix. callPackage gives the nixpkgs fetchers of
-  # the version control systems.
+  # Replace nixpkgs' fetchurl and fetchgit, for credentials or mirrors.
   fetchurl ? null,
   fetchgit ? null,
-  fetchhg ? null,
-  fetchsvn ? null,
-  fetchbzr ? null,
-  fetchfossil ? null,
 }:
 let
   lock = import ./lock.nix { inherit lockFile; };
-  fetch = import ./fetch.nix {
-    inherit
-      lock
-      fetchurl
-      fetchgit
-      fetchhg
-      fetchsvn
-      fetchbzr
-      fetchfossil
-      ;
-  };
+  inherit ((import "${purifierLib}/default.nix" { inherit lib; })) fetchEntry;
+  fetch = fetchEntry (
+    {
+      inherit pkgs;
+    }
+    // lib.optionalAttrs (fetchurl != null) { inherit fetchurl; }
+    // lib.optionalAttrs (fetchgit != null) { inherit fetchgit; }
+  );
   vcsModule = import ./vcs-module.nix {
     inherit lock fetch;
     cli =

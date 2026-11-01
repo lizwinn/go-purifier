@@ -6,33 +6,27 @@
 # file fetches every entry in parallel, and its out link is the GC root
 # that keeps them all alive.
 #
-# The wrapper evaluates it with nothing but the Nix installation it runs.
-# The go-purifier command that runs the wrapper is the builder of the tree
-# and of the module files, so no nixpkgs is needed.
+# The entries are fetched with fetchEntry of the shared library of the
+# nix-purifiers and the fetchers of the nixpkgs the go-purifier flake was
+# built with. The go-purifier command that runs the wrapper is the builder
+# of the tree and of the module files.
 {
   # The lockfile, as an absolute path.
   lockFile,
   # The go-purifier command, as an absolute path into the store.
   cli,
-  # The nixpkgs the go-purifier flake was built with, whose fetchers fetch
-  # Mercurial, Subversion, Bazaar and Fossil checkouts. A lockfile with
-  # only proxy files and git checkouts does not import it.
-  nixpkgs ? "",
+  # The nixpkgs the go-purifier flake was built with.
+  nixpkgs,
   libDir ? ./.,
+  # The nix/lib directory of the shared library, which the toolchain links
+  # into the go-purifier Nix library as `purifier`.
+  purifierLib ? libDir + "/purifier",
 }:
 let
+  pkgs = import nixpkgs { };
   lock = import (libDir + "/lock.nix") { inherit lockFile; };
-  pkgs =
-    if nixpkgs == "" then
-      throw "go-purifier: the lockfile has checkouts that need nixpkgs; run go from the go-purifier flake"
-    else
-      import nixpkgs { };
-  fetch = import (libDir + "/fetch.nix") {
-    inherit lock;
-    fetchhg = pkgs.fetchhg;
-    fetchsvn = pkgs.fetchsvn;
-    fetchbzr = pkgs.fetchbzr;
-    fetchfossil = pkgs.fetchfossil;
+  fetch = (import (purifierLib + "/default.nix") { inherit (pkgs) lib; }).fetchEntry {
+    inherit pkgs;
   };
   # The store object of the command, and the path of the command inside
   # it. storePath adds the store object to the string context of the

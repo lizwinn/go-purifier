@@ -16,12 +16,15 @@
   # The go-purifier command, as an absolute path into the store, for
   # modules from version control.
   cli,
+  # The nix/lib directory of the shared library, which the toolchain links
+  # into the go-purifier Nix library as `purifier`.
+  purifierLib ? ./purifier,
 }:
 let
   pkgs = import nixpkgs { };
   cliParts = builtins.match "(${builtins.storeDir}/[^/]+)(/.*)?" cli;
   cliPackage = builtins.storePath (builtins.elemAt cliParts 0);
-  buildGoProject = pkgs.callPackage ./build-go-project.nix { };
+  buildGoProject = pkgs.callPackage ./build-go-project.nix { inherit purifierLib; };
   build = buildGoProject {
     src = builtins.fetchGit {
       url = repo;

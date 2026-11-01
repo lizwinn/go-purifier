@@ -206,18 +206,16 @@ asks the lock proxy for the new version so the proxy caches it.
 - **The toolchain comes from nixpkgs.** Go's toolchain downloads are
   per-platform modules, which would make a lockfile depend on the system
   that made it. Every go command runs with `GOTOOLCHAIN=local`.
-- **Interactive mode needs no nixpkgs.** The go wrapper evaluates
-  `nix/lib/realize.nix` with the Nix installation alone, and the
-  go-purifier command is the builder of the proxy tree and of the files of
-  git modules.
+- **Downloads go through the shared library.** Every entry is fetched with
+  `fetchEntry` of [purifier](https://github.com/nix-purifiers/purifier),
+  the library of the nix-purifiers, and the nixpkgs fetchers it uses. The
+  sandboxed build and interactive mode use the same library and the same
+  nixpkgs, the one the go-purifier flake pins, so they fetch the same
+  store paths. The go-purifier command builds the proxy tree of
+  interactive mode and the files of modules from version control.
 
 ## Limits
 
-- **Checkouts of the other systems need nixpkgs.** Interactive mode
-  fetches Mercurial, Subversion, Bazaar and Fossil checkouts with the
-  nixpkgs fetchers, so a build that has them imports the nixpkgs of the
-  go-purifier flake. A build with only proxy files and git checkouts needs
-  only Nix.
 - **`.gitattributes` export rules.** The go command makes the zip of a
   module from version control with `git archive`, which leaves out files
   marked `export-ignore` and expands `export-subst`. go-purifier makes the

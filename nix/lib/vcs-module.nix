@@ -11,7 +11,8 @@
   # The go-purifier command, as a path into the store.
   cli,
   system,
-  # Fetches a git entry; see fetch.nix.
+  # Fetches a checkout entry: fetchEntry of the shared library of the
+  # nix-purifiers.
   fetch,
 }:
 vcsModule:

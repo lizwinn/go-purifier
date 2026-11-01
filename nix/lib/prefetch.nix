@@ -1,25 +1,21 @@
 # SPDX-License-Identifier: MIT
 #
 # What `go-purifier lock` builds to learn the NAR hash of a Mercurial,
-# Subversion, Bazaar or Fossil checkout: the entry, fetched with the
-# nixpkgs fetcher a build uses and a placeholder hash. The build fails
-# with a hash mismatch that reports the hash of the checkout.
+# Subversion, Bazaar or Fossil checkout: the entry, fetched with fetchEntry
+# of the shared library of the nix-purifiers, which uses the nixpkgs
+# fetcher a build uses, and a placeholder hash. The build fails with a hash
+# mismatch that reports the hash of the checkout.
 {
   # The nixpkgs the go-purifier flake was built with.
   nixpkgs,
   # The entry, as JSON, without its hash.
   entry,
+  # The nix/lib directory of the shared library, which the toolchain links
+  # into the go-purifier Nix library as `purifier`.
+  purifierLib ? ./purifier,
 }:
 let
   pkgs = import nixpkgs { };
-  fetch = import ./fetch.nix {
-    lock.artifactName = _: "go-purifier-prefetch";
-    inherit (pkgs)
-      fetchhg
-      fetchsvn
-      fetchbzr
-      fetchfossil
-      ;
-  };
+  inherit ((import (purifierLib + "/default.nix") { inherit (pkgs) lib; })) fetchEntry;
 in
-fetch (builtins.fromJSON entry // { hash = pkgs.lib.fakeHash; })
+fetchEntry { inherit pkgs; } (builtins.fromJSON entry // { hash = pkgs.lib.fakeHash; })
