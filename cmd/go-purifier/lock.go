@@ -100,6 +100,11 @@ type GitSource struct {
 	URL        string `json:"url"`
 	Rev        string `json:"rev"`
 	Submodules bool   `json:"submodules"`
+	// The shared entry kind keeps the .git directory of a checkout when
+	// LeaveDotGit is true, rebuilt from CommitObject. go-purifier writes
+	// false and null: module zips hold tracked files only.
+	LeaveDotGit  bool    `json:"leaveDotGit"`
+	CommitObject *string `json:"commitObject"`
 }
 
 // HgSource is the repository and revision of a Mercurial entry.

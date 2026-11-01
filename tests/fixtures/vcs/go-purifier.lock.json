@@ -42,7 +42,9 @@
       "git": {
         "url": "https://github.com/charmbracelet/x",
         "rev": "faa4adf95555331dfb439b716cc83767ecdadeb4",
-        "submodules": false
+        "submodules": false,
+        "leaveDotGit": false,
+        "commitObject": null
       },
       "hash": "sha256-MOoXhHjJKojvYAaGpK3XZpzTDK2Ia5lfPwNthM8biL4="
     },
@@ -51,7 +53,9 @@
       "git": {
         "url": "https://github.com/google/uuid",
         "rev": "0f11ee6918f41a04c201eceeadf612a377bc7fbc",
-        "submodules": false
+        "submodules": false,
+        "leaveDotGit": false,
+        "commitObject": null
       },
       "hash": "sha256-VWl9sqUzdOuhW0KzQlv0gwwUQClYkmZwSydHG2sALYw="
     },

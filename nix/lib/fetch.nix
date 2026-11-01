@@ -3,7 +3,7 @@
 # The fetcher for locked entries, in the kinds the nix-purifiers share:
 #
 #   file    { path, url, mirrors, hash }
-#   git     { path, git = { url, rev, submodules }, hash }
+#   git     { path, git = { url, rev, submodules, leaveDotGit, commitObject }, hash }
 #   hg      { path, hg = { url, rev, subrepos }, hash }
 #   svn     { path, svn = { url, rev, ignoreExternals, ignoreKeywords }, hash }
 #   bzr     { path, bzr = { url, rev }, hash }
@@ -12,7 +12,9 @@
 # A file is a proxy file, and the hash of a file is its SHA-256. Every
 # other kind is a checkout of a repository, and its hash is the NAR hash
 # of the checkout. The ignoreExternals and ignoreKeywords flags of a
-# Subversion entry are those of nixpkgs' fetchsvn.
+# Subversion entry are those of nixpkgs' fetchsvn. go-purifier writes git
+# entries with leaveDotGit false and commitObject null, since a Go module
+# zip holds tracked files only, so this fetcher never keeps .git.
 #
 # By default a file is a fixed-output derivation on Nix's built-in fetcher
 # (the same derivation <nix/fetchurl.nix> makes), and a git checkout is
