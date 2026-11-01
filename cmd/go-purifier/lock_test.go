@@ -63,7 +63,7 @@ func TestLockable(t *testing.T) {
 	}
 }
 
-func TestCollectArtifacts(t *testing.T) {
+func TestCollectFiles(t *testing.T) {
 	dir := t.TempDir()
 	writeFiles(t, dir, map[string]string{
 		"github.com/!burnt!sushi/toml/@v/v1.3.2.mod": "module github.com/BurntSushi/toml\n",
@@ -72,36 +72,26 @@ func TestCollectArtifacts(t *testing.T) {
 		"example.com/private/@v/v1.0.0.mod":          "module example.com/private\n",
 		"sumdb/sum.golang.org/lookup/x":              "tile",
 	})
-	got, err := collectArtifacts(dir, "https://proxy.example", "example.com/private")
+	got, err := collectFiles(dir, "example.com/private")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []Artifact{
-		{
-			Path:    "github.com/!burnt!sushi/toml/@v/v1.3.2.mod",
-			URL:     "https://proxy.example/github.com/!burnt!sushi/toml/@v/v1.3.2.mod",
-			Mirrors: &[]string{},
-			Hash:    "sha256-KAIbQYClnDmTYHqVsY4jDdC8a+pSQv/o6ou/tPT3tNc=",
-		},
-		{
-			Path:    "github.com/!burnt!sushi/toml/@v/v1.3.2.zip",
-			URL:     "https://proxy.example/github.com/!burnt!sushi/toml/@v/v1.3.2.zip",
-			Mirrors: &[]string{},
-			Hash:    "sha256-SnD+mqZDbgLC3qNA+9HjUuTvLYzmylKtJdS5VHH8i/I=",
-		},
+	want := map[string]string{
+		"github.com/!burnt!sushi/toml/@v/v1.3.2.mod": "sha256-KAIbQYClnDmTYHqVsY4jDdC8a+pSQv/o6ou/tPT3tNc=",
+		"github.com/!burnt!sushi/toml/@v/v1.3.2.zip": "sha256-SnD+mqZDbgLC3qNA+9HjUuTvLYzmylKtJdS5VHH8i/I=",
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("collectArtifacts = %#v, want %#v", got, want)
+		t.Errorf("collectFiles = %#v, want %#v", got, want)
 	}
 }
 
-func TestCollectArtifactsOfMissingCache(t *testing.T) {
-	got, err := collectArtifacts(filepath.Join(t.TempDir(), "absent"), "https://proxy.example", "")
+func TestCollectFilesOfMissingCache(t *testing.T) {
+	got, err := collectFiles(filepath.Join(t.TempDir(), "absent"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 0 {
-		t.Errorf("collectArtifacts of a missing cache = %v, want none", got)
+		t.Errorf("collectFiles of a missing cache = %v, want none", got)
 	}
 }
 
@@ -132,8 +122,8 @@ func TestVCSModules(t *testing.T) {
 		t.Errorf("git entry = %#v", entry)
 	}
 	want := []VCSModule{
-		{Module: "example.com/Private", Version: "v1.0.0", ProxyDir: "example.com/!private/@v", Time: "2024-01-02T03:04:05Z", Entry: entry.Path},
-		{Module: "example.com/Private/sub", Version: "v0.1.0", ProxyDir: "example.com/!private/sub/@v", Time: "2024-01-02T03:04:05Z", Entry: entry.Path, Subdir: "sub"},
+		{Module: "example.com/Private", Version: "v1.0.0", Entry: entry.Path},
+		{Module: "example.com/Private/sub", Version: "v0.1.0", Entry: entry.Path, Subdir: "sub"},
 	}
 	if !reflect.DeepEqual(mods, want) {
 		t.Errorf("vcsModules = %#v, want %#v", mods, want)

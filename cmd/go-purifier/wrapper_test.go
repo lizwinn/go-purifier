@@ -94,9 +94,10 @@ func TestContentHash(t *testing.T) {
 	path := filepath.Join(t.TempDir(), lockFileName)
 	lock := &Lock{
 		Version:   lockFormatVersion,
-		Modules:   []string{"example.com/m"},
 		Binaries:  []Binary{},
-		Artifacts: []Artifact{{Path: "example.com/x/@v/v1.0.0.zip", URL: "https://proxy.example/example.com/x/@v/v1.0.0.zip?a=b&c=<d>", Mirrors: &[]string{}, Hash: "sha256-x"}},
+		Proxy:     "https://proxy.example/?a=b&c=<d>",
+		Files:     map[string]string{"example.com/x/@v/v1.0.0.zip": "sha256-x"},
+		Checkouts: []Artifact{},
 	}
 	if err := writeLock(path, lock); err != nil {
 		t.Fatal(err)

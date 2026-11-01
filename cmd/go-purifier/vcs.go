@@ -30,15 +30,11 @@ import (
 // go.sum then verifies both.
 
 // VCSModule is a module version the lock run fetched from version control.
+// nix/lib/lock.nix derives its proxy directory from Module.
 type VCSModule struct {
 	Module  string `json:"module"`
 	Version string `json:"version"`
-	// The proxy directory of the module's versions, such as
-	// github.com/!burnt!sushi/toml/@v.
-	ProxyDir string `json:"proxyDir"`
-	// The commit time, for the .info file.
-	Time string `json:"time"`
-	// The path of the git entry that holds the checkout.
+	// The path of the checkout entry that holds the module.
 	Entry string `json:"entry"`
 	// The module's directory in the repository, or "".
 	Subdir string `json:"subdir"`
@@ -157,12 +153,10 @@ func vcsModules(cacheDir, noProxy string, tools vcsTools) ([]VCSModule, []Artifa
 		}
 		entryPath := entry.Path
 		mods = append(mods, VCSModule{
-			Module:   modPath,
-			Version:  version,
-			ProxyDir: escaped + "/@v",
-			Time:     info.Time,
-			Entry:    entryPath,
-			Subdir:   info.Origin.Subdir,
+			Module:  modPath,
+			Version: version,
+			Entry:   entryPath,
+			Subdir:  info.Origin.Subdir,
 		})
 		return nil
 	})
@@ -345,21 +339,21 @@ func prefetchGit(url, rev string) (string, error) {
 	return out.Hash, nil
 }
 
-// moduleFilesCommand writes the .mod, .zip and .info file of a module
-// version from a checkout of its repository into the directory $out. It
-// is the builder of the Nix derivation for each locked VCS module:
+// moduleFilesCommand writes the .mod and .zip file of a module version
+// from a checkout of its repository into the directory $out. It is the
+// builder of the Nix derivation for each locked VCS module:
 //
-//	go-purifier module-files <checkout> <subdir> <module> <version> <time>
+//	go-purifier module-files <checkout> <subdir> <module> <version>
 func moduleFilesCommand(args []string) error {
-	if len(args) != 5 {
-		return errors.New("usage: go-purifier module-files <checkout> <subdir> <module> <version> <time>")
+	if len(args) != 4 {
+		return errors.New("usage: go-purifier module-files <checkout> <subdir> <module> <version>")
 	}
-	checkout, subdir, modPath, version, modTime := args[0], args[1], args[2], args[3], args[4]
+	checkout, subdir, modPath, version := args[0], args[1], args[2], args[3]
 	out := os.Getenv("out")
 	if out == "" {
 		return errors.New("module-files writes into $out, which is not set")
 	}
-	return writeModuleFiles(checkout, subdir, modPath, version, modTime, out)
+	return writeModuleFiles(checkout, subdir, modPath, version, out)
 }
 
 // writeModuleFiles writes the files of the module in directory subdir of
@@ -368,7 +362,7 @@ func moduleFilesCommand(args []string) error {
 // directory, filtered by the rules of golang.org/x/mod/zip, and the
 // LICENSE file of the repository root when the module is in a
 // subdirectory without one of its own.
-func writeModuleFiles(checkout, subdir, modPath, version, modTime, out string) error {
+func writeModuleFiles(checkout, subdir, modPath, version, out string) error {
 	dir := filepath.Join(checkout, filepath.FromSlash(subdir))
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		return err
@@ -382,13 +376,6 @@ func writeModuleFiles(checkout, subdir, modPath, version, modTime, out string) e
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(out, version+".mod"), gomod, 0o444); err != nil {
-		return err
-	}
-	info, err := json.Marshal(struct{ Version, Time string }{version, modTime})
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(out, version+".info"), info, 0o444); err != nil {
 		return err
 	}
 	var files []modzip.File

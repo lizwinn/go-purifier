@@ -96,38 +96,6 @@ let
           src = cliSrc;
         }).packages.go-purifier;
 
-      # A relative path with its "." and ".." segments resolved, or null
-      # when it leaves the directory it is relative to.
-      normalize =
-        path:
-        let
-          step =
-            acc: seg:
-            if acc == null then
-              null
-            else if seg == "" || seg == "." then
-              acc
-            else if seg == ".." then
-              (if acc == [ ] then null else lib.init acc)
-            else
-              acc ++ [ seg ];
-          segs = builtins.foldl' step [ ] (lib.splitString "/" path);
-        in
-        if segs == null then null else lib.concatStringsSep "/" segs;
-
-      # Every directory a replace directive points at is inside src, or the
-      # build could not read it.
-      checkedLocalModules = map (
-        m:
-        let
-          inSrc = normalize (if modRoot == "" then m.path else "${modRoot}/${m.path}");
-        in
-        if inSrc == null then
-          throw "go-purifier: the lockfile replaces ${m.module} with ${m.path}, which is outside src; set src to a directory that contains both, and modRoot to the lock root inside it"
-        else
-          inSrc
-      ) currentLock.localModules;
-
       defaultSrcFilter =
         path: type:
         let
@@ -161,7 +129,8 @@ let
         lib.optionals (tags != [ ]) [ "-tags=${lib.concatStringsSep "," tags}" ]
         ++ lib.optionals (ldflags != [ ]) [ "-ldflags=${lib.concatStringsSep " " ldflags}" ];
 
-      pname = baseNameOf (builtins.head currentLock.modules);
+      pname =
+        if currentLock.binaries != [ ] then (builtins.head currentLock.binaries).name else "go-project";
 
       # The go command's environment; `go-purifier lock` runs go the same
       # way, so the lockfile holds what the build downloads. GONOPROXY
@@ -170,7 +139,6 @@ let
       # after reading the proxy tree needed a download the lockfile does not
       # hold, and goWithHint says what to run.
       goEnvironment = ''
-        ${lib.concatMapStrings (p: "test -d ${lib.escapeShellArg p}\n") checkedLocalModules}
         cd ${lib.escapeShellArg (if modRoot == "" then "." else modRoot)}
         ${lib.optionalString (goSum != null) "cp ${goSum} go.sum"}
         export HOME="$TMPDIR/home"
@@ -190,6 +158,9 @@ let
           cat "$TMPDIR/go-stderr" >&2
           if grep -q ${lib.escapeShellArg "${proxy}"} "$TMPDIR/go-stderr"; then
             echo "go-purifier: the go command needed a download that the lockfile does not hold. Run \`go-purifier lock\` at the lock root, or \`go-purifier relock\` when go.mod is unchanged, and commit the lockfile." >&2
+          fi
+          if grep -q 'replacement directory .* does not exist' "$TMPDIR/go-stderr"; then
+            echo "go-purifier: a replace directive points at a directory outside src; set src to a directory that contains it, and modRoot to the lock root inside src." >&2
           fi
           return 1
         }
@@ -225,7 +196,7 @@ let
           runHook postInstall
         '';
         passthru = { inherit lock proxy; };
-        meta.description = "${lib.concatStringsSep ", " lock.modules}, built by go-purifier";
+        meta.description = "The commands of a Go build, built by go-purifier";
       };
 
       tests = goDerivation {
@@ -233,9 +204,9 @@ let
         version = "locked";
         buildPhase = ''
           runHook preBuild
-          goWithHint go test ${lib.escapeShellArgs goFlags} ${
-            lib.escapeShellArgs (map (m: "${m}/...") currentLock.modules)
-          }
+          # The packages of the main modules: the module at the lock root,
+          # or the modules of the workspace.
+          goWithHint go test ${lib.escapeShellArgs goFlags} $(go list -m -f '{{.Path}}/...')
           runHook postBuild
         '';
         installPhase = ''
@@ -305,7 +276,7 @@ let
         proxy
         lock
         ;
-      fetches = currentLock.artifacts;
+      fetches = currentLock.entries;
     };
 in
 buildGoProject

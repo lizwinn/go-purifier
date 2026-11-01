@@ -90,7 +90,7 @@ in
   # A lockfile whose download hash was changed fails at evaluation, since
   # its contentHash no longer matches, naming `go-purifier relock`.
   conformance-tampered =
-    rejects "conformance-tampered" ./fixtures/conformance/tampered ".artifacts"
+    rejects "conformance-tampered" ./fixtures/conformance/tampered ".entries"
       "contentHash does not match its content; run `go-purifier relock`";
 
   # A lockfile without a download the build needs: the go command cannot
@@ -106,7 +106,7 @@ in
   # A lockfile that is not JSON fails at evaluation, naming
   # `go-purifier relock`.
   conformance-malformed =
-    rejects "conformance-malformed" ./fixtures/conformance/malformed ".artifacts"
+    rejects "conformance-malformed" ./fixtures/conformance/malformed ".entries"
       "run `go-purifier relock` to write it again";
 
   # A source tree that holds no go-purifier lockfile builds from one kept
@@ -145,7 +145,7 @@ in
     test -e '${hello.proxy}/github.com/!burnt!sushi/toml/@v/v1.4.0.zip'
     test -e '${hello.proxy}/github.com/!burnt!sushi/toml/@v/v1.4.0.mod'
     test -e '${vcs.proxy}/github.com/charmbracelet/x/ansi/@v/v0.11.9.zip'
-    test -e '${vcs.proxy}/github.com/google/uuid/@v/v1.6.0.info'
+    test -e '${vcs.proxy}/github.com/google/uuid/@v/v1.6.0.mod'
     touch $out
   '';
 
@@ -174,11 +174,15 @@ in
     assert builtins.all (e: e ? url && e ? mirrors && e ? hash) hello.fetches;
     runCommand "fixture-fetches" { } "touch $out";
 
-  # A replace directive to a directory outside src stops the build at
-  # evaluation.
+  # A replace directive to a directory outside src fails the build, which
+  # says to widen src.
   replace-outside-src =
-    assert !(builtins.tryEval (build { src = ./fixtures/replace/app; }).all.drvPath).success;
-    runCommand "replace-outside-src" { } "touch $out";
+    runCommand "replace-outside-src"
+      { failure = pkgs.testers.testBuildFailure (build { src = ./fixtures/replace/app; }).all; }
+      ''
+        grep -qF 'a replace directive points at a directory outside src' "$failure/testBuildFailure.log"
+        touch $out
+      '';
 
   # The go-purifier command, built from this repository's own lockfile, its
   # unit tests, and the toolchain around it.
@@ -199,6 +203,6 @@ in
   # lock.nix rejects a lockfile of another format version, naming
   # `go-purifier relock`.
   lock-version =
-    rejects "lock-version" ./fixtures/conformance/version ".artifacts"
+    rejects "lock-version" ./fixtures/conformance/version ".entries"
       "has lock format version 99";
 }

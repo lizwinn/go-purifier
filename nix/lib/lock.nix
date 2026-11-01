@@ -97,15 +97,35 @@ let
       else
         throw "go-purifier: go.mod, go.sum or go.work under ${toString args.root} changed since ${toString lockFile} was written; run `go-purifier lock` there and commit the lockfile";
 
-    # The file entries, which are proxy files, and every other entry, which
-    # is a checkout of the repository of a module from version control.
-    files = builtins.filter (a: a ? url) lock.artifacts;
+    # The file entries of the shared library for the proxy files: the
+    # lockfile records each file's proxy path and SHA-256, and the URL is
+    # the path under the proxy.
+    files = map (path: {
+      inherit path;
+      url = "${lock.proxy}/${path}";
+      mirrors = [ ];
+      hash = lock.files.${path};
+    }) (builtins.attrNames lock.files);
+
+    # The checkout entries, by path, as the vcsModules name them.
     checkouts = builtins.listToAttrs (
       map (a: {
         name = a.path;
         value = a;
-      }) (builtins.filter (a: !(a ? url)) lock.artifacts)
+      }) lock.checkouts
     );
+
+    # Every entry the build fetches.
+    entries = withHelpers.files ++ lock.checkouts;
+
+    # The proxy directory of a module version: the go command's case
+    # encoding of the module path, where each capital letter becomes "!"
+    # and the small letter, then /@v.
+    proxyDir = module: escapeModulePath module + "/@v";
   };
+
+  capitals = builtins.genList (i: builtins.substring i 1 "ABCDEFGHIJKLMNOPQRSTUVWXYZ") 26;
+  smalls = builtins.genList (i: builtins.substring i 1 "abcdefghijklmnopqrstuvwxyz") 26;
+  escapeModulePath = builtins.replaceStrings capitals (map (c: "!" + c) smalls);
 in
 withHelpers

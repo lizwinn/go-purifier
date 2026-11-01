@@ -1,10 +1,5 @@
 {
   "version": 1,
-  "modules": [
-    "example.com/app",
-    "example.com/lib"
-  ],
-  "goVersion": "go1.26.10",
   "proxy": "https://proxy.golang.org",
   "noProxy": "",
   "definitionFiles": [
@@ -22,39 +17,14 @@
       "package": "example.com/app"
     }
   ],
-  "localModules": [],
+  "files": {
+    "golang.org/x/mod/@v/v0.17.0.mod": "sha256-XErAMQolMwdXA5zPOpjnX+/by31ETd0EkjAAOkSUW94=",
+    "golang.org/x/sync/@v/v0.10.0.mod": "sha256-cA5dsA3SaqGaF9zl/FUkNtYPaMVgbIW4IfJMPWByoVE=",
+    "golang.org/x/text/@v/v0.21.0.mod": "sha256-wBWvdGl7kVrUGQvifPb1u+AqFYrM7w281KQqEAAt9JY=",
+    "golang.org/x/text/@v/v0.21.0.zip": "sha256-vj23kWUa9vLLAiWqXVV4wjFJsgFyRrqOWVhggLqt1hI=",
+    "golang.org/x/tools/@v/v0.21.1-0.20240508182429-e35e4ccd0d2d.mod": "sha256-RSXa1PVyPR5An2o5jBrn/V4sY31DpcrrSYRAd7kcnus="
+  },
+  "checkouts": [],
   "vcsModules": [],
-  "artifacts": [
-    {
-      "path": "golang.org/x/mod/@v/v0.17.0.mod",
-      "url": "https://proxy.golang.org/golang.org/x/mod/@v/v0.17.0.mod",
-      "mirrors": [],
-      "hash": "sha256-XErAMQolMwdXA5zPOpjnX+/by31ETd0EkjAAOkSUW94="
-    },
-    {
-      "path": "golang.org/x/sync/@v/v0.10.0.mod",
-      "url": "https://proxy.golang.org/golang.org/x/sync/@v/v0.10.0.mod",
-      "mirrors": [],
-      "hash": "sha256-cA5dsA3SaqGaF9zl/FUkNtYPaMVgbIW4IfJMPWByoVE="
-    },
-    {
-      "path": "golang.org/x/text/@v/v0.21.0.mod",
-      "url": "https://proxy.golang.org/golang.org/x/text/@v/v0.21.0.mod",
-      "mirrors": [],
-      "hash": "sha256-wBWvdGl7kVrUGQvifPb1u+AqFYrM7w281KQqEAAt9JY="
-    },
-    {
-      "path": "golang.org/x/text/@v/v0.21.0.zip",
-      "url": "https://proxy.golang.org/golang.org/x/text/@v/v0.21.0.zip",
-      "mirrors": [],
-      "hash": "sha256-vj23kWUa9vLLAiWqXVV4wjFJsgFyRrqOWVhggLqt1hI="
-    },
-    {
-      "path": "golang.org/x/tools/@v/v0.21.1-0.20240508182429-e35e4ccd0d2d.mod",
-      "url": "https://proxy.golang.org/golang.org/x/tools/@v/v0.21.1-0.20240508182429-e35e4ccd0d2d.mod",
-      "mirrors": [],
-      "hash": "sha256-RSXa1PVyPR5An2o5jBrn/V4sY31DpcrrSYRAd7kcnus="
-    }
-  ],
-  "contentHash": "sha256-X+NisH3jybrpNf2zEfowxMrhcd5aWCf4aejaGWM+AWc="
+  "contentHash": "sha256-P+LKe8kwzM8C7vsWHbe2sIq9nLPnwNq/GOlRUCbgGO8="
 }

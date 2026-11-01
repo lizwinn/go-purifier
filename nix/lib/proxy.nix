@@ -31,11 +31,12 @@ let
     let
       files = vcsModule m;
     in
-    lib.concatMapStrings (ext: "${m.proxyDir}/${m.version}${ext}\t${files}/${m.version}${ext}\n") [
-      ".mod"
-      ".zip"
-      ".info"
-    ]
+    lib.concatMapStrings
+      (ext: "${lock.proxyDir m.module}/${m.version}${ext}\t${files}/${m.version}${ext}\n")
+      [
+        ".mod"
+        ".zip"
+      ]
   ) lock.vcsModules;
 in
 # The manifest goes to the builder as a file, since a module with many

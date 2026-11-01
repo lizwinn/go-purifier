@@ -99,8 +99,8 @@ esac
 # A tampered hash fails the fixed-output fetch.
 dir=$(fixture tampered)
 edit_lock "$dir" '
-a = next(a for a in lock["artifacts"] if a["path"].endswith(".zip"))
-a["hash"] = "sha256-" + "A" * 43 + "="
+k = next(k for k in sorted(lock["files"]) if k.endswith(".zip"))
+lock["files"][k] = "sha256-" + "A" * 43 + "="
 '
 expect_build_failure "$dir" "hash mismatch in fixed-output derivation"
 
@@ -108,7 +108,7 @@ expect_build_failure "$dir" "hash mismatch in fixed-output derivation"
 # the proxy tree, and the hint says to relock.
 dir=$(fixture missing)
 edit_lock "$dir" '
-lock["artifacts"] = [a for a in lock["artifacts"] if "golang.org/x/text" not in a["path"] or not a["path"].endswith(".zip")]
+lock["files"] = {k: v for k, v in lock["files"].items() if "golang.org/x/text" not in k or not k.endswith(".zip")}
 '
 expect_build_failure "$dir" 'does not hold. Run `go-purifier relock`'
 expect_go_failure "$dir" '`go-purifier relock` to rebuild the lockfile'

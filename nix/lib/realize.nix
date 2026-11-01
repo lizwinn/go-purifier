@@ -59,10 +59,9 @@ let
       files = vcsModule m;
     in
     builtins.concatStringsSep "" (
-      map (ext: "${m.proxyDir}/${m.version}${ext}\t${files}/${m.version}${ext}\n") [
+      map (ext: "${lock.proxyDir m.module}/${m.version}${ext}\t${files}/${m.version}${ext}\n") [
         ".mod"
         ".zip"
-        ".info"
       ]
     )
   ) lock.vcsModules;

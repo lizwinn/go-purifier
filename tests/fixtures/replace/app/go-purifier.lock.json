@@ -1,9 +1,5 @@
 {
   "version": 1,
-  "modules": [
-    "example.com/replaceapp"
-  ],
-  "goVersion": "go1.26.10",
   "proxy": "https://proxy.golang.org",
   "noProxy": "",
   "definitionFiles": [
@@ -19,26 +15,11 @@
       "package": "example.com/replaceapp"
     }
   ],
-  "localModules": [
-    {
-      "module": "example.com/greeter",
-      "path": "../greeter"
-    }
-  ],
+  "files": {
+    "github.com/google/uuid/@v/v1.6.0.mod": "sha256-c9pHtjOLAKCC/UUao1oyc9OtwJuOm7qY2rAQkeQCr24=",
+    "github.com/google/uuid/@v/v1.6.0.zip": "sha256-0PAvN3IX9CcC4lloTgZEHtv1FA3dzDS6m+pWA4s4pu0="
+  },
+  "checkouts": [],
   "vcsModules": [],
-  "artifacts": [
-    {
-      "path": "github.com/google/uuid/@v/v1.6.0.mod",
-      "url": "https://proxy.golang.org/github.com/google/uuid/@v/v1.6.0.mod",
-      "mirrors": [],
-      "hash": "sha256-c9pHtjOLAKCC/UUao1oyc9OtwJuOm7qY2rAQkeQCr24="
-    },
-    {
-      "path": "github.com/google/uuid/@v/v1.6.0.zip",
-      "url": "https://proxy.golang.org/github.com/google/uuid/@v/v1.6.0.zip",
-      "mirrors": [],
-      "hash": "sha256-0PAvN3IX9CcC4lloTgZEHtv1FA3dzDS6m+pWA4s4pu0="
-    }
-  ],
-  "contentHash": "sha256-LUPtZOevAISvmm83SA1Hi8ORO1/1jb+VIb1vZz7Jr0U="
+  "contentHash": "sha256-PvDSZL1Z1Wy0mE7J3p3FedJieoS+gcNYd0jpc7W1348="
 }

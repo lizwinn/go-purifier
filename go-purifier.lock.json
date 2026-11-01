@@ -1,9 +1,5 @@
 {
   "version": 1,
-  "modules": [
-    "github.com/nix-purifiers/go-purifier"
-  ],
-  "goVersion": "go1.26.10",
   "proxy": "https://proxy.golang.org",
   "noProxy": "",
   "definitionFiles": [
@@ -17,27 +13,12 @@
       "package": "github.com/nix-purifiers/go-purifier/cmd/go-purifier"
     }
   ],
-  "localModules": [],
+  "files": {
+    "golang.org/x/mod/@v/v0.22.0.mod": "sha256-6+gZF0QRVCmfcyuKoJ8plSl1LfKYVcpNcCaUbRu+zYI=",
+    "golang.org/x/mod/@v/v0.22.0.zip": "sha256-DQqWBUsy36QM7CooaL+Hzdox47strApeIhjv4+8+88w=",
+    "golang.org/x/tools/@v/v0.13.0.mod": "sha256-FCs0FrAOghO0CeJ5pDS5emzglTHJFMG0cXh4FX1Xmj8="
+  },
+  "checkouts": [],
   "vcsModules": [],
-  "artifacts": [
-    {
-      "path": "golang.org/x/mod/@v/v0.22.0.mod",
-      "url": "https://proxy.golang.org/golang.org/x/mod/@v/v0.22.0.mod",
-      "mirrors": [],
-      "hash": "sha256-6+gZF0QRVCmfcyuKoJ8plSl1LfKYVcpNcCaUbRu+zYI="
-    },
-    {
-      "path": "golang.org/x/mod/@v/v0.22.0.zip",
-      "url": "https://proxy.golang.org/golang.org/x/mod/@v/v0.22.0.zip",
-      "mirrors": [],
-      "hash": "sha256-DQqWBUsy36QM7CooaL+Hzdox47strApeIhjv4+8+88w="
-    },
-    {
-      "path": "golang.org/x/tools/@v/v0.13.0.mod",
-      "url": "https://proxy.golang.org/golang.org/x/tools/@v/v0.13.0.mod",
-      "mirrors": [],
-      "hash": "sha256-FCs0FrAOghO0CeJ5pDS5emzglTHJFMG0cXh4FX1Xmj8="
-    }
-  ],
-  "contentHash": "sha256-Fb7RK2DGS93ctKWyNgL8W+kyKtONXRq/LK/74UU8Hi0="
+  "contentHash": "sha256-HYreP1AB5rJMs2k1INh86uLyoAI4Fk+TeQ+EC2zwmGw="
 }

@@ -30,18 +30,18 @@ const lockFormatVersion = 1
 
 const defaultProxy = "https://proxy.golang.org"
 
-// Lock is the content of go-purifier.lock.json.
+// Lock is the content of go-purifier.lock.json. It holds what Nix needs
+// and go.mod and go.sum cannot give it: the SHA-256 of each file from the
+// proxy (go.sum holds hashes of module contents, which Nix cannot check a
+// download against), the repository and revision of each module from
+// version control, the main packages, and what tells a stale lockfile.
 type Lock struct {
 	Version int `json:"version"`
-	// The paths of the main modules: the module at the lock root, or the
-	// modules of the workspace.
-	Modules []string `json:"modules"`
-	// The go version the lock was made with, such as go1.26.10.
-	GoVersion string `json:"goVersion"`
-	// The module proxy every file entry was downloaded from.
+	// The module proxy the files were downloaded from. A file is at its
+	// path under this URL.
 	Proxy string `json:"proxy"`
 	// The GONOPROXY patterns of the lock run: the modules it fetched from
-	// version control.
+	// version control. A relock reads them again.
 	NoProxy string `json:"noProxy"`
 	// The files, relative to the lock root, that define the dependencies,
 	// and their digest. A lockfile whose digest differs from the files is
@@ -50,12 +50,14 @@ type Lock struct {
 	DefinitionHash  string   `json:"definitionHash"`
 	// The main packages of the main modules: what a Nix build installs.
 	Binaries []Binary `json:"binaries"`
-	// Modules that a replace directive points at a local directory.
-	LocalModules []LocalModule `json:"localModules"`
-	// Module versions fetched from version control.
+	// The .mod and .zip files from the proxy, as their proxy path and
+	// their SHA-256 in SRI form.
+	Files map[string]string `json:"files"`
+	// The checkouts of the repositories of modules from version control, as
+	// entries of the shared library of the nix-purifiers.
+	Checkouts []Artifact `json:"checkouts"`
+	// The module versions fetched from version control, and their checkouts.
 	VCSModules []VCSModule `json:"vcsModules"`
-	// Every download: proxy files, and checkouts of repositories.
-	Artifacts []Artifact `json:"artifacts"`
 	// The digest of the rest of the lockfile (contentHash.go). A lockfile
 	// whose content does not match it was changed by hand.
 	ContentHash string `json:"contentHash"`
@@ -69,32 +71,23 @@ type Binary struct {
 	Package string `json:"package"`
 }
 
-// LocalModule is a module that a replace directive points at a directory.
-type LocalModule struct {
-	Module string `json:"module"`
-	// The directory, relative to the lock root.
-	Path string `json:"path"`
-}
-
-// Artifact is one download, in the entry shapes the nix-purifiers share:
-// a file entry has URL and Mirrors, and a git entry has Git. Path is its
-// place in the output tree. For a file entry that tree is a module proxy,
-// and Path is the file's proxy path, which is also its path under
-// $GOMODCACHE/cache/download.
+// Artifact is a checkout of a repository, as an entry of the shared library
+// of the nix-purifiers: exactly one of Git, Hg, Svn, Bzr and Fossil is set.
+// Path names it; nix/lib/lock.nix makes the file entries of the proxy
+// files from Lock.Files, with a URL and empty mirrors.
 //
-// Mirrors is always empty. Two module proxies serve zips with the same
-// content, which go.sum verifies, but not necessarily the same bytes, so
-// the other proxies in GOPROXY are not mirrors of the lock proxy.
+// The mirrors of a file entry are empty. Two module proxies serve zips
+// with the same content, which go.sum verifies, but not necessarily the
+// same bytes, so the other proxies in GOPROXY are not mirrors of the lock
+// proxy.
 type Artifact struct {
-	Path    string     `json:"path"`
-	URL     string     `json:"url,omitempty"`
-	Mirrors *[]string  `json:"mirrors,omitempty"`
-	Git     *GitSource `json:"git,omitempty"`
-	Hg      *HgSource  `json:"hg,omitempty"`
-	Svn     *SvnSource `json:"svn,omitempty"`
-	Bzr     *RevSource `json:"bzr,omitempty"`
-	Fossil  *RevSource `json:"fossil,omitempty"`
-	// The SHA-256 of a file, or the NAR hash of a checkout, in SRI form.
+	Path   string     `json:"path"`
+	Git    *GitSource `json:"git,omitempty"`
+	Hg     *HgSource  `json:"hg,omitempty"`
+	Svn    *SvnSource `json:"svn,omitempty"`
+	Bzr    *RevSource `json:"bzr,omitempty"`
+	Fossil *RevSource `json:"fossil,omitempty"`
+	// The NAR hash of the checkout, in SRI form.
 	Hash string `json:"hash"`
 }
 
@@ -221,7 +214,7 @@ func lockCommand(force bool, args []string) error {
 	for _, b := range lock.Binaries {
 		names = append(names, b.Name)
 	}
-	fmt.Fprintf(os.Stderr, "go-purifier: wrote %s with %d locked downloads and the commands [%s]\n", lockPath, len(lock.Artifacts), strings.Join(names, " "))
+	fmt.Fprintf(os.Stderr, "go-purifier: wrote %s with %d locked downloads and the commands [%s]\n", lockPath, len(lock.Files)+len(lock.Checkouts), strings.Join(names, " "))
 	return nil
 }
 
@@ -333,10 +326,6 @@ func makeLock(goBin, root string, workspace bool, proxy string, settings lockSet
 	env := lockEnv(tmp, proxy, settings)
 	defer removeModCache(goBin, root, env, tmp)
 
-	goVersion, err := goOutput(goBin, root, env, "env", "GOVERSION")
-	if err != nil {
-		return nil, err
-	}
 	// The module graph, which downloads the go.mod file of every module in
 	// it.
 	listed, err := goOutput(goBin, root, env, "list", "-m", "-json", "all")
@@ -359,30 +348,22 @@ func makeLock(goBin, root string, workspace bool, proxy string, settings lockSet
 	}
 
 	lock := &Lock{
-		Version:      lockFormatVersion,
-		Modules:      []string{},
-		GoVersion:    strings.TrimSpace(goVersion),
-		Proxy:        proxy,
-		NoProxy:      noProxy,
-		Binaries:     binaries,
-		LocalModules: []LocalModule{},
+		Version:  lockFormatVersion,
+		Proxy:    proxy,
+		NoProxy:  noProxy,
+		Binaries: binaries,
 	}
+	// The go.mod and go.sum of the main modules and of every directory a
+	// replace directive points at define the dependencies.
 	var dirs []string
 	for _, m := range mods {
 		switch {
 		case m.Main:
-			lock.Modules = append(lock.Modules, m.Path)
 			dirs = append(dirs, m.Dir)
 		case m.Replace != nil && m.Replace.Version == "":
-			rel, err := filepath.Rel(root, m.Replace.Dir)
-			if err != nil {
-				return nil, err
-			}
-			lock.LocalModules = append(lock.LocalModules, LocalModule{Module: m.Path, Path: filepath.ToSlash(rel)})
 			dirs = append(dirs, m.Replace.Dir)
 		}
 	}
-	sort.Strings(lock.Modules)
 	if lock.DefinitionFiles, err = definitionFiles(root, workspace, dirs); err != nil {
 		return nil, err
 	}
@@ -391,18 +372,14 @@ func makeLock(goBin, root string, workspace bool, proxy string, settings lockSet
 	}
 
 	cacheDir := filepath.Join(tmp, "mod", "cache", "download")
-	files, err := collectArtifacts(cacheDir, proxy, noProxy)
-	if err != nil {
+	if lock.Files, err = collectFiles(cacheDir, noProxy); err != nil {
 		return nil, err
 	}
-	vcs, checkouts, err := vcsModules(cacheDir, noProxy, tools)
-	if err != nil {
+	if lock.VCSModules, lock.Checkouts, err = vcsModules(cacheDir, noProxy, tools); err != nil {
 		return nil, err
 	}
-	lock.VCSModules = vcs
-	lock.Artifacts = append(checkouts, files...)
-	if lock.Artifacts == nil {
-		lock.Artifacts = []Artifact{}
+	if lock.Checkouts == nil {
+		lock.Checkouts = []Artifact{}
 	}
 	return lock, nil
 }
@@ -454,13 +431,14 @@ func lockable(rel string) bool {
 	return false
 }
 
-// collectArtifacts lists the lockable files of a module download cache
-// that came from the proxy: those of modules noProxy does not match. The
-// download cache has the layout of a module proxy, so a file's path in it
-// is also its path under the proxy URL. The checksum database's tiles
-// (sumdb/) are left out: a build from the lockfile does not consult it.
-func collectArtifacts(dir, proxy, noProxy string) ([]Artifact, error) {
-	artifacts := []Artifact{}
+// collectFiles maps the lockable files of a module download cache that came
+// from the proxy, those of modules noProxy does not match, to their
+// SHA-256. The download cache has the layout of a module proxy, so a
+// file's path in it is also its path under the proxy URL. The checksum
+// database's tiles (sumdb/) are left out: a build from the lockfile does
+// not consult it.
+func collectFiles(dir, noProxy string) (map[string]string, error) {
+	files := map[string]string{}
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) && p == dir {
@@ -496,14 +474,13 @@ func collectArtifacts(dir, proxy, noProxy string) ([]Artifact, error) {
 		if err != nil {
 			return err
 		}
-		artifacts = append(artifacts, Artifact{Path: rel, URL: proxy + "/" + rel, Mirrors: &[]string{}, Hash: hash})
+		files[rel] = hash
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	sort.Slice(artifacts, func(i, j int) bool { return artifacts[i].Path < artifacts[j].Path })
-	return artifacts, nil
+	return files, nil
 }
 
 func fileHash(path string) (string, error) {

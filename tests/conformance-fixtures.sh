@@ -49,13 +49,13 @@ printf '\n// changed after the lock\n' >> "$out/stale/go.mod"
 
 copy tampered
 edit_lock "$out/tampered/go-purifier.lock.json" '
-a = next(a for a in lock["artifacts"] if a["path"].endswith(".zip"))
-a["hash"] = "sha256-" + "A" * 43 + "="
+k = next(k for k in sorted(lock["files"]) if k.endswith(".zip"))
+lock["files"][k] = "sha256-" + "A" * 43 + "="
 '
 
 copy missing
 edit_lock "$out/missing/go-purifier.lock.json" '
-lock["artifacts"] = [a for a in lock["artifacts"] if a["path"] != "golang.org/x/text/@v/v0.21.0.zip"]
+del lock["files"]["golang.org/x/text/@v/v0.21.0.zip"]
 ' rehash
 
 copy malformed

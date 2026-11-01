@@ -70,14 +70,14 @@ func TestWriteModuleFiles(t *testing.T) {
 		"LICENSE":           "root license\n",
 	})
 	out := filepath.Join(t.TempDir(), "out")
-	if err := writeModuleFiles(checkout, "sub", "example.com/repo/sub", "v1.0.0", "2024-01-02T03:04:05Z", out); err != nil {
+	if err := writeModuleFiles(checkout, "sub", "example.com/repo/sub", "v1.0.0", out); err != nil {
 		t.Fatal(err)
 	}
 	if gomod, err := os.ReadFile(filepath.Join(out, "v1.0.0.mod")); err != nil || string(gomod) != "module example.com/repo/sub\n" {
 		t.Errorf("v1.0.0.mod = %q, %v", gomod, err)
 	}
-	if info, err := os.ReadFile(filepath.Join(out, "v1.0.0.info")); err != nil || string(info) != `{"Version":"v1.0.0","Time":"2024-01-02T03:04:05Z"}` {
-		t.Errorf("v1.0.0.info = %q, %v", info, err)
+	if _, err := os.Stat(filepath.Join(out, "v1.0.0.info")); err == nil {
+		t.Error("module-files wrote a .info file, which builds do not read")
 	}
 	cf, err := modzip.CheckZip(module.Version{Path: "example.com/repo/sub", Version: "v1.0.0"}, filepath.Join(out, "v1.0.0.zip"))
 	if err != nil {
@@ -89,7 +89,7 @@ func TestWriteModuleFiles(t *testing.T) {
 	}
 
 	out2 := filepath.Join(t.TempDir(), "out")
-	if err := writeModuleFiles(checkout, "nogomod", "example.com/nogomod", "v1.0.0", "", out2); err != nil {
+	if err := writeModuleFiles(checkout, "nogomod", "example.com/nogomod", "v1.0.0", out2); err != nil {
 		t.Fatal(err)
 	}
 	if gomod, err := os.ReadFile(filepath.Join(out2, "v1.0.0.mod")); err != nil || string(gomod) != "module example.com/nogomod\n" {

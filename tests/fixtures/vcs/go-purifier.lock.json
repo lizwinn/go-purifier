@@ -1,9 +1,5 @@
 {
   "version": 1,
-  "modules": [
-    "example.com/vcs"
-  ],
-  "goVersion": "go1.26.10",
   "proxy": "https://proxy.golang.org",
   "noProxy": "github.com/google/uuid,github.com/charmbracelet/x",
   "definitionFiles": [
@@ -17,26 +13,17 @@
       "package": "example.com/vcs"
     }
   ],
-  "localModules": [],
-  "vcsModules": [
-    {
-      "module": "github.com/charmbracelet/x/ansi",
-      "version": "v0.11.9",
-      "proxyDir": "github.com/charmbracelet/x/ansi/@v",
-      "time": "2026-10-08T17:28:26Z",
-      "entry": "vcs/5540a36ff706-faa4adf95555331dfb439b716cc83767ecdadeb4",
-      "subdir": "ansi"
-    },
-    {
-      "module": "github.com/google/uuid",
-      "version": "v1.6.0",
-      "proxyDir": "github.com/google/uuid/@v",
-      "time": "2024-01-23T18:54:04Z",
-      "entry": "vcs/46a3528413be-0f11ee6918f41a04c201eceeadf612a377bc7fbc",
-      "subdir": ""
-    }
-  ],
-  "artifacts": [
+  "files": {
+    "github.com/clipperhouse/displaywidth/@v/v0.11.0.mod": "sha256-ZDv5CTUde8j/Kainu0TMoR7+GB7Wbl7+V9aVuwI+/7M=",
+    "github.com/clipperhouse/displaywidth/@v/v0.11.0.zip": "sha256-J4MMkc37KmSHSNsh96JzTctQ0hxiDt3lHUiLpOeWfj0=",
+    "github.com/clipperhouse/uax29/v2/@v/v2.7.0.mod": "sha256-88X05Pnn+xaupf2dxfJMP/nBV7GmdXbA8hQBF1iVB6A=",
+    "github.com/clipperhouse/uax29/v2/@v/v2.7.0.zip": "sha256-Z7Enjx/7Tk14OjkOSP5zloZGUBOOeF1LS/ylkUMz92E=",
+    "github.com/lucasb-eyer/go-colorful/@v/v1.4.1.mod": "sha256-hPnDjpiEqwE8g3yxau4TlQDT1cbMqwJDmIHbLs8o9mA=",
+    "github.com/lucasb-eyer/go-colorful/@v/v1.4.1.zip": "sha256-OZpx7PPjqqCvlqd58cEGaIsJXb/QqFRVp8cG09f/nr0=",
+    "github.com/mattn/go-runewidth/@v/v0.0.27.mod": "sha256-kJHHk+JVA2uoztYX+jIllyp0Xq7lytTPJkwVduXBNH4=",
+    "github.com/mattn/go-runewidth/@v/v0.0.27.zip": "sha256-eLFpC9JQb67uz/nM5hXlcQwS/iWlOTq+PCUD0OpO4uo="
+  },
+  "checkouts": [
     {
       "path": "vcs/5540a36ff706-faa4adf95555331dfb439b716cc83767ecdadeb4",
       "git": {
@@ -58,55 +45,21 @@
         "commitObject": null
       },
       "hash": "sha256-VWl9sqUzdOuhW0KzQlv0gwwUQClYkmZwSydHG2sALYw="
-    },
-    {
-      "path": "github.com/clipperhouse/displaywidth/@v/v0.11.0.mod",
-      "url": "https://proxy.golang.org/github.com/clipperhouse/displaywidth/@v/v0.11.0.mod",
-      "mirrors": [],
-      "hash": "sha256-ZDv5CTUde8j/Kainu0TMoR7+GB7Wbl7+V9aVuwI+/7M="
-    },
-    {
-      "path": "github.com/clipperhouse/displaywidth/@v/v0.11.0.zip",
-      "url": "https://proxy.golang.org/github.com/clipperhouse/displaywidth/@v/v0.11.0.zip",
-      "mirrors": [],
-      "hash": "sha256-J4MMkc37KmSHSNsh96JzTctQ0hxiDt3lHUiLpOeWfj0="
-    },
-    {
-      "path": "github.com/clipperhouse/uax29/v2/@v/v2.7.0.mod",
-      "url": "https://proxy.golang.org/github.com/clipperhouse/uax29/v2/@v/v2.7.0.mod",
-      "mirrors": [],
-      "hash": "sha256-88X05Pnn+xaupf2dxfJMP/nBV7GmdXbA8hQBF1iVB6A="
-    },
-    {
-      "path": "github.com/clipperhouse/uax29/v2/@v/v2.7.0.zip",
-      "url": "https://proxy.golang.org/github.com/clipperhouse/uax29/v2/@v/v2.7.0.zip",
-      "mirrors": [],
-      "hash": "sha256-Z7Enjx/7Tk14OjkOSP5zloZGUBOOeF1LS/ylkUMz92E="
-    },
-    {
-      "path": "github.com/lucasb-eyer/go-colorful/@v/v1.4.1.mod",
-      "url": "https://proxy.golang.org/github.com/lucasb-eyer/go-colorful/@v/v1.4.1.mod",
-      "mirrors": [],
-      "hash": "sha256-hPnDjpiEqwE8g3yxau4TlQDT1cbMqwJDmIHbLs8o9mA="
-    },
-    {
-      "path": "github.com/lucasb-eyer/go-colorful/@v/v1.4.1.zip",
-      "url": "https://proxy.golang.org/github.com/lucasb-eyer/go-colorful/@v/v1.4.1.zip",
-      "mirrors": [],
-      "hash": "sha256-OZpx7PPjqqCvlqd58cEGaIsJXb/QqFRVp8cG09f/nr0="
-    },
-    {
-      "path": "github.com/mattn/go-runewidth/@v/v0.0.27.mod",
-      "url": "https://proxy.golang.org/github.com/mattn/go-runewidth/@v/v0.0.27.mod",
-      "mirrors": [],
-      "hash": "sha256-kJHHk+JVA2uoztYX+jIllyp0Xq7lytTPJkwVduXBNH4="
-    },
-    {
-      "path": "github.com/mattn/go-runewidth/@v/v0.0.27.zip",
-      "url": "https://proxy.golang.org/github.com/mattn/go-runewidth/@v/v0.0.27.zip",
-      "mirrors": [],
-      "hash": "sha256-eLFpC9JQb67uz/nM5hXlcQwS/iWlOTq+PCUD0OpO4uo="
     }
   ],
-  "contentHash": "sha256-NemKBwHko+akhz1I423TucpNehe0fpA81KQRgbZEwTg="
+  "vcsModules": [
+    {
+      "module": "github.com/charmbracelet/x/ansi",
+      "version": "v0.11.9",
+      "entry": "vcs/5540a36ff706-faa4adf95555331dfb439b716cc83767ecdadeb4",
+      "subdir": "ansi"
+    },
+    {
+      "module": "github.com/google/uuid",
+      "version": "v1.6.0",
+      "entry": "vcs/46a3528413be-0f11ee6918f41a04c201eceeadf612a377bc7fbc",
+      "subdir": ""
+    }
+  ],
+  "contentHash": "sha256-Q5IrMDtmM0Ti58JRED0P2Ah1XECG9i6Vfh6u+s6BWNM="
 }
