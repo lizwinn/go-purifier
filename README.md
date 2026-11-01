@@ -4,7 +4,7 @@ go-purifier makes Nix the dependency backend of a Go build. It records the
 files the go command downloads in a lockfile, so that Nix can build the
 module or workspace in its sandbox, and so that the go command and gopls
 read the same files offline. Your repository holds the lockfile next to
-`go.mod`, and your flake builds from it.
+`go.mod`.
 
 go-purifier is one of the [nix-purifiers](https://nix-purifiers.github.io),
 which share one contract: the same builder interface, commands, checks
@@ -23,16 +23,35 @@ for a workspace. We recommend committing it to the repository together
 with `go.sum`, and the builder and the commands look for both there by
 default.
 
+Then build the project with Nix, from its directory. The command adds no
+Nix file to the project. Replace `hello` with the name of one of the
+project's commands:
+
+```zsh
+nix build --impure --expr '
+  let
+    purifier = builtins.getFlake "github:nix-purifiers/go-purifier";
+    pkgs = import purifier.inputs.nixpkgs {
+      system = builtins.currentSystem;
+      overlays = [ purifier.overlays.default ];
+    };
+  in
+  (pkgs.go-purifier.buildGoProject { src = ./.; }).packages.hello'
+```
+
+This uses the purifier's pinned nixpkgs, matching the lock command above.
+To build with ambient `<nixpkgs>` from your Nix search path instead,
+replace `import purifier.inputs.nixpkgs` with `import <nixpkgs>`.
+Both forms need no Nix files in your project. The build tool and language
+versions must match the lockfile; with ambient nixpkgs, lock with the
+purifier from that package set or pass a compatible toolchain to the builder.
+
 The flake's `overlays.default` adds one attribute to a package set, the
 scope `go-purifier`. The scope holds the builder `buildGoProject`, the
-`go-purifier` command and the toolchain package. A package written for
-`callPackage` takes the scope by name:
+`go-purifier` command and the toolchain package.
 
-```nix
-# package.nix
-{ go-purifier }:
-(go-purifier.buildGoProject { src = ./.; }).packages.hello
-```
+A flake that packages the project calls the builder the same way. It can
+live in the project's repository or in another one:
 
 ```nix
 {
@@ -46,9 +65,11 @@ scope `go-purifier`. The scope holds the builder `buildGoProject`, the
         inherit system;
         overlays = [ go-purifier.overlays.default ];
       };
+      build = pkgs.go-purifier.buildGoProject { src = ./.; };
     in
     {
-      packages.${system}.hello = pkgs.callPackage ./package.nix { };
+      packages.${system}.hello = build.packages.hello;
+      checks.${system}.tests = build.tests;
     };
 }
 ```
@@ -241,73 +262,67 @@ These limits affect a build:
 ### fzf
 
 To build [fzf](https://github.com/junegunn/fzf) from a clone of its
-repository, lock it in the clone:
-
-```zsh
-git clone https://github.com/junegunn/fzf
-cd fzf
-nix run github:nix-purifiers/go-purifier -- lock
-```
-
-Then add a `flake.nix` next to `go.mod`. fzf's Makefile passes the version
-to the linker, so the flake does the same with `ldflags`:
-
-```nix
-{
-  inputs.go-purifier.url = "github:nix-purifiers/go-purifier";
-  inputs.nixpkgs.follows = "go-purifier/nixpkgs";
-
-  outputs = { nixpkgs, go-purifier, ... }:
-    let
-      system = "x86_64-linux";
-      pkgs = import nixpkgs {
-        inherit system;
-        overlays = [ go-purifier.overlays.default ];
-      };
-      build = pkgs.go-purifier.buildGoProject {
-        src = ./.;
-        ldflags = [ "-X main.version=0.74.5" ];
-      };
-    in
-    {
-      packages.${system}.default = build.packages.fzf;
-      checks.${system}.tests = build.tests;
-    };
-}
-```
-
-A flake reads only the files git tracks, so add both files with
-`git add go-purifier.lock.json flake.nix`. `nix build` then builds fzf,
-and `nix flake check` runs its tests in the sandbox.
-
-To package fzf without changing its repository, an external build keeps
-the lockfile in your own flake instead. Run the lock in a clone at the tag
-you package, and write the lockfile next to your `flake.nix`:
+repository, lock it in the clone and build it from there. fzf's Makefile
+passes the version to the linker, so the build does the same with
+`ldflags`:
 
 ```zsh
 git clone --branch v0.74.5 https://github.com/junegunn/fzf
 cd fzf
-nix run github:nix-purifiers/go-purifier -- lock --lockfile ~/my-flake/fzf.lock.json
+nix run github:nix-purifiers/go-purifier -- lock
+nix build --impure --expr '
+  let
+    purifier = builtins.getFlake "github:nix-purifiers/go-purifier";
+    pkgs = import purifier.inputs.nixpkgs {
+      system = builtins.currentSystem;
+      overlays = [ purifier.overlays.default ];
+    };
+  in
+  (pkgs.go-purifier.buildGoProject {
+    src = ./.;
+    ldflags = [ "-X main.version=0.74.5" ];
+  }).packages.fzf'
 ```
 
-A package in your flake then fetches the source and passes the lockfile.
-Your flake calls it with `callPackage` from a package set with
-`go-purifier.overlays.default`, as in the Quickstart:
+The result links to `./result/bin/fzf`. Replacing `.packages.fzf` with
+`.tests` runs fzf's tests in the sandbox.
 
-```nix
-# fzf.nix
-{ go-purifier, fetchFromGitHub }:
-(go-purifier.buildGoProject {
-  src = fetchFromGitHub {
-    owner = "junegunn";
-    repo = "fzf";
-    rev = "v0.74.5";
-    hash = "sha256-+v3oSlf3HBpPkNqS3QxRV/B1yHYb07/a70WYuS0aopY=";
-  };
-  lockFile = ./fzf.lock.json;
-  ldflags = [ "-X main.version=0.74.5" ];
-}).packages.fzf
+To build fzf without changing its repository, keep the lockfile in a
+directory of your own. Run the lock in a clone at the tag, and write the
+lockfile to that directory:
+
+```zsh
+git clone --branch v0.74.5 https://github.com/junegunn/fzf
+(cd fzf && nix run github:nix-purifiers/go-purifier -- lock --lockfile ~/fzf-build/fzf.lock.json)
+cd ~/fzf-build
 ```
+
+Then build from that directory. The build fetches the source and reads
+the lockfile beside it:
+
+```zsh
+nix build --impure --expr '
+  let
+    purifier = builtins.getFlake "github:nix-purifiers/go-purifier";
+    pkgs = import purifier.inputs.nixpkgs {
+      system = builtins.currentSystem;
+      overlays = [ purifier.overlays.default ];
+    };
+  in
+  (pkgs.go-purifier.buildGoProject {
+    src = pkgs.fetchFromGitHub {
+      owner = "junegunn";
+      repo = "fzf";
+      rev = "v0.74.5";
+      hash = "sha256-+v3oSlf3HBpPkNqS3QxRV/B1yHYb07/a70WYuS0aopY=";
+    };
+    lockFile = ./fzf.lock.json;
+    ldflags = [ "-X main.version=0.74.5" ];
+  }).packages.fzf'
+```
+
+A flake that packages fzf for others calls `pkgs.go-purifier.buildGoProject`
+with the same arguments, as in the Quickstart.
 
 ## Credits
 
