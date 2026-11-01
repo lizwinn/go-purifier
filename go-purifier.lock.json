@@ -10,7 +10,7 @@
     "go.mod",
     "go.sum"
   ],
-  "definitionHash": "sha256-8MPtg/xOJA04O9zcM8vN/ybi2uRuC0IQGTobMFmQ0sk=",
+  "definitionHash": "sha256-94E9DlYJjYnxpyXSaLShOwlKEdV50QpJMK5Gcd0x234=",
   "binaries": [
     {
       "name": "go-purifier",

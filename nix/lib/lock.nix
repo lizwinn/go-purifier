@@ -38,6 +38,33 @@ lock
 // {
   inherit storeName;
 
+  # Whether the files that define the dependencies, under the lock root
+  # root (a path), still have the digest the lockfile records. The digest
+  # is the one cmd/go-purifier/root.go computes: the SHA-256 of a line per
+  # file, in sorted order, of the file's path, a space, and the file's
+  # SHA-256 in hex, or "absent".
+  isCurrent =
+    root:
+    let
+      line =
+        file:
+        let
+          path = root + "/${file}";
+        in
+        if builtins.pathExists path then
+          "${file} ${builtins.hashFile "sha256" path}\n"
+        else
+          "${file} absent\n";
+      digest = builtins.hashString "sha256" (
+        builtins.concatStringsSep "" (map line (builtins.sort builtins.lessThan lock.definitionFiles))
+      );
+    in
+    builtins.convertHash {
+      hash = digest;
+      hashAlgo = "sha256";
+      toHashFormat = "sri";
+    } == lock.definitionHash;
+
   # The fetch name of an entry: its tree path, made a valid store name.
   artifactName = artifact: storeName artifact.path;
 

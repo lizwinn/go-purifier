@@ -49,9 +49,11 @@ func findUp(dir, name string) (string, bool) {
 	}
 }
 
-// definitionHash is the SHA-256, in SRI form, of the files that define a
-// build's dependencies, given relative to the lock root. A missing file and
-// an empty one hash differently.
+// definitionHash is a digest, in SRI form, of the files that define a
+// build's dependencies, given relative to the lock root. It is the SHA-256
+// of a line per file, in sorted order: the file's path, a space, and the
+// file's SHA-256 in hex, or "absent" for a missing file. nix/lib/lock.nix
+// computes the same digest with builtins.hashFile.
 func definitionHash(root string, files []string) (string, error) {
 	sorted := append([]string(nil), files...)
 	sort.Strings(sorted)
@@ -60,12 +62,11 @@ func definitionHash(root string, files []string) (string, error) {
 		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(name)))
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
-			fmt.Fprintf(h, "%s\x00absent\x00", name)
+			fmt.Fprintf(h, "%s absent\n", name)
 		case err != nil:
 			return "", err
 		default:
-			fmt.Fprintf(h, "%s\x00%d\x00", name, len(data))
-			h.Write(data)
+			fmt.Fprintf(h, "%s %x\n", name, sha256.Sum256(data))
 		}
 	}
 	return sri(h.Sum(nil)), nil

@@ -12,7 +12,7 @@
     "go.mod",
     "go.sum"
   ],
-  "definitionHash": "sha256-GpfXYUQjt+H5r6Tfgije89QMT5KVAp3veJ2lLW6H9Bc=",
+  "definitionHash": "sha256-wsVSnqjs0dE+v7YhDTSN3O5F7C8vE9wMDFlUjiwRD3c=",
   "binaries": [
     {
       "name": "replaceapp",

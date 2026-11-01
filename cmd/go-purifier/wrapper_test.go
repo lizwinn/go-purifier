@@ -5,6 +5,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -64,9 +65,9 @@ func TestInteractiveEnvLeavesUnlockedBuildsAlone(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("GOWORK", "off")
 	writeFiles(t, root, map[string]string{"go.mod": "module example.com/m\n"})
-	env, err := interactiveEnv(root)
-	if err != nil || env != nil {
-		t.Fatalf("interactiveEnv without a lockfile = %v, %v; want nothing", env, err)
+	env, proxy, err := interactiveEnv("go", root, false)
+	if err != nil || env != nil || proxy != "" {
+		t.Fatalf("interactiveEnv without a lockfile = %v, %q, %v; want nothing", env, proxy, err)
 	}
 
 	stale := &Lock{Version: lockFormatVersion, DefinitionFiles: []string{"go.mod", "go.sum"}, DefinitionHash: "sha256-stale"}
@@ -74,9 +75,59 @@ func TestInteractiveEnvLeavesUnlockedBuildsAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("GO_PURIFIER_NIX_LIB", "")
-	env, err = interactiveEnv(root)
-	if err != nil || env != nil {
-		t.Fatalf("interactiveEnv with a stale lockfile = %v, %v; want nothing", env, err)
+	for _, changing := range []bool{false, true} {
+		env, proxy, err = interactiveEnv("go", root, changing)
+		if err != nil || env != nil || proxy != "" {
+			t.Fatalf("interactiveEnv with a stale lockfile = %v, %q, %v; want nothing", env, proxy, err)
+		}
+	}
+}
+
+// A lockfile that is not JSON gets an error that names the command that
+// writes it again.
+func TestInteractiveEnvRejectsMalformedLockfile(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("GOWORK", "off")
+	writeFiles(t, root, map[string]string{"go.mod": "module example.com/m\n", lockFileName: "{ not json"})
+	_, _, err := interactiveEnv("go", root, false)
+	if err == nil || !strings.Contains(err.Error(), "go-purifier relock") {
+		t.Fatalf("interactiveEnv with a malformed lockfile = %v; want an error that names go-purifier relock", err)
+	}
+}
+
+func TestChangesDependencies(t *testing.T) {
+	cases := map[string]bool{
+		"build ./...":                       false,
+		"test ./...":                        false,
+		"run .":                             false,
+		"vet ./...":                         false,
+		"get example.com/x@v1.2.3":          true,
+		"get -u ./...":                      true,
+		"-C sub get example.com/x":          true,
+		"mod tidy":                          true,
+		"mod download":                      true,
+		"mod graph":                         false,
+		"install example.com/cmd/x@latest":  true,
+		"install ./cmd/x":                   false,
+		"run example.com/cmd/x@v1.0.0 -arg": true,
+		"list -m -u all":                    true,
+		"list -m all":                       false,
+		"work sync":                         true,
+		"":                                  false,
+	}
+	for line, want := range cases {
+		if got := changesDependencies(strings.Fields(line)); got != want {
+			t.Errorf("changesDependencies(%q) = %v, want %v", line, got, want)
+		}
+	}
+}
+
+func TestTailBuffer(t *testing.T) {
+	var b tailBuffer
+	b.Write([]byte(strings.Repeat("a", 70<<10)))
+	b.Write([]byte("end"))
+	if len(b.data) != 64<<10 || !strings.HasSuffix(b.String(), "end") {
+		t.Errorf("tailBuffer kept %d bytes ending %q", len(b.data), b.String()[len(b.data)-3:])
 	}
 }
 

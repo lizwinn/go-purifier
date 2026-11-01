@@ -10,7 +10,7 @@
     "go.mod",
     "go.sum"
   ],
-  "definitionHash": "sha256-1t19R+a5m4L3ILgUH9fV3ENl1aJvZk8Noi/iGJRiSA4=",
+  "definitionHash": "sha256-HZoqpDyDTw2O6XO8IMPj+Ez6wDeHQH/CB2E86acDQ2A=",
   "binaries": [
     {
       "name": "greet",

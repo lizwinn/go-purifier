@@ -9,9 +9,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -48,24 +50,123 @@ func runGo(args []string) int {
 		return 1
 	}
 	env := os.Environ()
+	proxyDir := ""
 	if os.Getenv("GO_PURIFIER") != "0" {
 		dir, err := workingDir(args)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "go-purifier: %v\n", err)
 			return 1
 		}
-		extra, err := interactiveEnv(dir)
+		var extra []string
+		extra, proxyDir, err = interactiveEnv(goBin, dir, changesDependencies(args))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "go-purifier: %v\n", err)
 			return 1
 		}
 		env = append(env, extra...)
 	}
-	if err := syscall.Exec(goBin, append([]string{"go"}, args...), env); err != nil {
+	if proxyDir == "" {
+		if err := syscall.Exec(goBin, append([]string{"go"}, args...), env); err != nil {
+			fmt.Fprintf(os.Stderr, "go-purifier: running %s: %v\n", goBin, err)
+			return 1
+		}
+		return 0
+	}
+	return runWithHint(goBin, args, env, proxyDir)
+}
+
+// runWithHint runs the go command as a child process, so that when it
+// fails after reading the proxy tree, which means it needed a download the
+// lockfile does not hold, a hint can say what to run. The terminal sends
+// interrupts to the child as well; the wrapper waits for the child's exit
+// and forwards a termination request.
+func runWithHint(goBin string, args, env []string, proxyDir string) int {
+	cmd := exec.Command(goBin, args...)
+	cmd.Args[0] = "go"
+	cmd.Env = env
+	cmd.Stdin, cmd.Stdout = os.Stdin, os.Stdout
+	var stderr tailBuffer
+	cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
+	signal.Ignore(syscall.SIGINT, syscall.SIGQUIT)
+	terms := make(chan os.Signal, 1)
+	signal.Notify(terms, syscall.SIGTERM, syscall.SIGHUP)
+	if err := cmd.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "go-purifier: running %s: %v\n", goBin, err)
 		return 1
 	}
-	return 0
+	go func() {
+		for s := range terms {
+			_ = cmd.Process.Signal(s)
+		}
+	}()
+	err := cmd.Wait()
+	if err == nil {
+		return 0
+	}
+	if strings.Contains(stderr.String(), proxyDir) {
+		fmt.Fprintln(os.Stderr, "go-purifier: the go command needed a download that go-purifier.lock.json does not hold. Run `go-purifier lock` if go.mod changed, or `go-purifier relock` to rebuild the lockfile.")
+	}
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ExitCode() > 0 {
+		return exit.ExitCode()
+	}
+	return 1
+}
+
+// tailBuffer keeps the last 64 KiB written to it.
+type tailBuffer struct{ data []byte }
+
+func (b *tailBuffer) Write(p []byte) (int, error) {
+	b.data = append(b.data, p...)
+	if over := len(b.data) - 64<<10; over > 0 {
+		b.data = b.data[over:]
+	}
+	return len(p), nil
+}
+
+func (b *tailBuffer) String() string { return string(b.data) }
+
+// changesDependencies reports whether a go command line adds, upgrades or
+// looks up module versions, as `go get`, `go mod tidy` and `go install
+// pkg@version` do. Such a command may need modules the lockfile does not
+// hold yet, so it reads the locked downloads first and the user's
+// GOPROXY after them.
+func changesDependencies(args []string) bool {
+	if len(args) >= 2 && args[0] == "-C" {
+		args = args[2:]
+	} else if len(args) >= 1 && strings.HasPrefix(args[0], "-C=") {
+		args = args[1:]
+	}
+	if len(args) == 0 {
+		return false
+	}
+	rest := args[1:]
+	hasVersion := func() bool {
+		for _, a := range rest {
+			if !strings.HasPrefix(a, "-") && strings.Contains(a, "@") {
+				return true
+			}
+		}
+		return false
+	}
+	switch args[0] {
+	case "get":
+		return true
+	case "mod":
+		return len(rest) > 0 && (rest[0] == "tidy" || rest[0] == "download" || rest[0] == "why")
+	case "work":
+		return len(rest) > 0 && rest[0] == "sync"
+	case "install", "run":
+		return hasVersion()
+	case "list":
+		for _, a := range rest {
+			if a == "-u" || a == "-versions" || a == "-retracted" {
+				return true
+			}
+		}
+		return hasVersion()
+	}
+	return false
 }
 
 // workingDir is the directory the go command runs in: the directory of a
@@ -97,37 +198,52 @@ func workingDir(args []string) (string, error) {
 const noProxyMatchesNothing = "go-purifier.invalid"
 
 // interactiveEnv is what the go command's environment gains when it runs
-// in dir, inside a build with a current lockfile: the locked downloads as
-// its only proxy. A build without a lockfile, or with a stale one,
-// resolves the usual way.
-func interactiveEnv(dir string) ([]string, error) {
+// in dir, inside a build with a current lockfile, and the proxy tree it
+// reads. For most commands the locked downloads are the only proxy. A
+// command that changes the dependencies reads them first and the user's
+// GOPROXY after them, with the user's GONOPROXY and GOSUMDB, so that it can
+// add modules the lockfile does not hold yet. A build without a lockfile,
+// or with a stale one, resolves the usual way.
+func interactiveEnv(goBin, dir string, changing bool) ([]string, string, error) {
 	root, ok := findLockRoot(dir)
 	if !ok {
-		return nil, nil
+		return nil, "", nil
 	}
 	lockPath := filepath.Join(root, lockFileName)
 	lock, err := readLock(lockPath)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
+		return nil, "", nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if lock.Version != lockFormatVersion {
 		fmt.Fprintf(os.Stderr, "go-purifier: %s has lock format version %d and this go-purifier reads version %d; resolving the usual way until `go-purifier relock` renews it\n", lockPath, lock.Version, lockFormatVersion)
-		return nil, nil
+		return nil, "", nil
 	}
 	definition, err := definitionHash(root, lock.DefinitionFiles)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if lock.DefinitionHash != definition {
-		fmt.Fprintf(os.Stderr, "go-purifier: the module definitions changed since %s was written; resolving the usual way until `go-purifier lock` renews it\n", lockPath)
-		return nil, nil
+		if !changing {
+			fmt.Fprintf(os.Stderr, "go-purifier: go.mod, go.sum or go.work changed since %s was written; resolving the usual way until `go-purifier lock` renews it\n", lockPath)
+		}
+		return nil, "", nil
 	}
 	proxyDir, err := realize(root, lockPath)
 	if err != nil {
-		return nil, err
+		return nil, "", err
+	}
+	if changing {
+		goproxy, err := goOutput(goBin, dir, os.Environ(), "env", "GOPROXY")
+		if err != nil {
+			return nil, "", err
+		}
+		return []string{
+			"GOPROXY=file://" + proxyDir + "," + strings.TrimSpace(goproxy),
+			"GOTOOLCHAIN=local",
+		}, proxyDir, nil
 	}
 	return []string{
 		"GOPROXY=file://" + proxyDir,
@@ -137,7 +253,7 @@ func interactiveEnv(dir string) ([]string, error) {
 		// offline.
 		"GOSUMDB=off",
 		"GOTOOLCHAIN=local",
-	}, nil
+	}, proxyDir, nil
 }
 
 // realize builds the proxy tree of a lockfile through Nix and returns the

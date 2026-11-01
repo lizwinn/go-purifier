@@ -29,13 +29,17 @@
   # in the current directory.
   #
   # `nix develop github:nix-purifiers/go-purifier` gives a shell whose `go`
-  # runs against the module's locked downloads.
+  # runs against the module's locked downloads, with gopls, which runs that
+  # `go` as well.
   perSystem =
     { config, pkgs, ... }:
     {
       packages.default = config.packages.toolchain;
       devShells.default = pkgs.mkShell {
-        packages = [ config.packages.toolchain ];
+        packages = [
+          config.packages.toolchain
+          pkgs.gopls
+        ];
       };
     };
 

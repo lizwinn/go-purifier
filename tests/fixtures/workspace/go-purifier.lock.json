@@ -15,7 +15,7 @@
     "lib/go.mod",
     "lib/go.sum"
   ],
-  "definitionHash": "sha256-bFQpsz5KAVWg9scYfdJ1HuJs/6D9Ao8Oom4HMXBg2As=",
+  "definitionHash": "sha256-uOWNgPfm7T9JAKSjvAd+C9RREEBxrgAQFzDWcZLwfec=",
   "binaries": [
     {
       "name": "app",

@@ -528,7 +528,7 @@ func readLock(path string) (*Lock, error) {
 	}
 	var lock Lock
 	if err := json.Unmarshal(data, &lock); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return nil, fmt.Errorf("%s is not a go-purifier lockfile (%v); run `go-purifier relock` to write it again", path, err)
 	}
 	return &lock, nil
 }

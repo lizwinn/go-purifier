@@ -72,6 +72,17 @@ in
 let
   lock = import ./lock.nix { inherit lockFile; };
 
+  # A source tree given as a path is read at evaluation, and a lockfile
+  # whose definition files have changed since it was written stops the
+  # build there. A source tree that is the output of a derivation, such as
+  # a fetcher, is not read at evaluation.
+  lockRoot = if modRoot == "" then src else src + "/${modRoot}";
+  currentLock =
+    if builtins.isPath src && !lock.isCurrent lockRoot then
+      throw "go-purifier: go.mod, go.sum or go.work under ${toString lockRoot} changed since its go-purifier.lock.json was written; run `go-purifier lock` there and commit go-purifier.lock.json"
+    else
+      lock;
+
   # A relative path with its "." and ".." segments resolved, or null when
   # it leaves the directory it is relative to.
   normalize =
@@ -130,7 +141,24 @@ let
     lib.optionals (tags != [ ]) [ "-tags=${lib.concatStringsSep "," tags}" ]
     ++ lib.optionals (ldflags != [ ]) [ "-ldflags=${lib.concatStringsSep " " ldflags}" ];
 
-  pname = baseNameOf (builtins.head lock.modules);
+  pname = baseNameOf (builtins.head currentLock.modules);
+
+  # Runs a go command. When it fails after reading the proxy tree, the go
+  # command needed a download the lockfile does not hold, and the hint says
+  # how to add it.
+  goWithHint = ''
+    goWithHint() {
+      if "$@" 2> "$TMPDIR/go-stderr"; then
+        cat "$TMPDIR/go-stderr" >&2
+        return 0
+      fi
+      cat "$TMPDIR/go-stderr" >&2
+      if grep -q ${lib.escapeShellArg "${proxy}"} "$TMPDIR/go-stderr"; then
+        echo "go-purifier: the go command needed a download that go-purifier.lock.json does not hold. Run \`go-purifier relock\` at the lock root and commit go-purifier.lock.json." >&2
+      fi
+      return 1
+    }
+  '';
 
   all = stdenv.mkDerivation {
     inherit pname;
@@ -155,20 +183,23 @@ let
       export GOENV=off
       export GOTOOLCHAIN=local
       export GOFLAGS="-mod=readonly -trimpath -buildvcs=false"
+      ${goWithHint}
     '';
     buildPhase = ''
       runHook preBuild
       mkdir -p "$out/bin"
       ${lib.concatMapStrings (b: ''
         echo "building ${b.name} (${b.package})"
-        go build ${lib.escapeShellArgs goFlags} -o "$out/bin/${b.name}" ${lib.escapeShellArg b.package}
+        goWithHint go build ${lib.escapeShellArgs goFlags} -o "$out/bin/${b.name}" ${lib.escapeShellArg b.package}
       '') lock.binaries}
       runHook postBuild
     '';
     inherit doCheck;
     checkPhase = ''
       runHook preCheck
-      go test ${lib.escapeShellArgs goFlags} ${lib.escapeShellArgs (map (m: "${m}/...") lock.modules)}
+      goWithHint go test ${lib.escapeShellArgs goFlags} ${
+        lib.escapeShellArgs (map (m: "${m}/...") lock.modules)
+      }
       runHook postCheck
     '';
     installPhase = ''

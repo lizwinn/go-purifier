@@ -10,7 +10,7 @@
     "go.mod",
     "go.sum"
   ],
-  "definitionHash": "sha256-tfItSWu9MWydikZW39xnS+/WJUAvTxnqb5l2PTNIgUE=",
+  "definitionHash": "sha256-iIfgzPjsBxQtNnASmoVRYhjdOvHiXLEM/HS0Lnxr+2A=",
   "binaries": [
     {
       "name": "vcs",
