@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "module": "github.com/nix-purifiers/go-purifier",
+  "goVersion": "go1.26.10",
+  "proxy": "https://proxy.golang.org",
+  "definitionHash": "sha256-OHPdEY7lG/709zM5X9UDNtv5Rq9BipRLGL8lQU/Un5A=",
+  "binaries": [
+    {
+      "name": "go-purifier",
+      "package": "github.com/nix-purifiers/go-purifier/cmd/go-purifier"
+    }
+  ],
+  "artifacts": []
+}

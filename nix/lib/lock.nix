@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: MIT
+#
+# Reads a go-purifier lockfile (written by `go-purifier lock`).
+#
+# Needs no nixpkgs: the go wrapper evaluates this with nothing but the Nix
+# installation it runs. `lockFile` is a path, or an absolute path as a
+# string.
+{ lockFile }:
+let
+  lock = builtins.fromJSON (builtins.readFile lockFile);
+
+  supportedVersion = import ./lock-version.nix;
+
+  # A store path name from a proxy path. Store path names allow
+  # [A-Za-z0-9+._?=-], must not start with a dot, and are at most 211
+  # characters; every other character becomes "_", and a long name keeps
+  # its end, where the version and the file type are. The go wrapper and
+  # the sandboxed build both name their fetches with this function, so they
+  # share store paths.
+  storeName =
+    path:
+    let
+      # builtins.split alternates the text between matches with a list per
+      # match.
+      replaced = builtins.concatStringsSep "" (
+        map (part: if builtins.isList part then "_" else part) (builtins.split "[^A-Za-z0-9+._?=-]" path)
+      );
+      length = builtins.stringLength replaced;
+      tail = if length > 200 then builtins.substring (length - 200) 200 replaced else replaced;
+      undotted = builtins.head (builtins.match "\\.*(.*)" tail);
+    in
+    if undotted == "" then "file" else undotted;
+in
+assert
+  lock.version == supportedVersion
+  || throw "go-purifier: ${toString lockFile} has lock format version ${toString lock.version}; this library reads version ${toString supportedVersion}. Run `go-purifier relock` with the go-purifier revision of this library.";
+lock
+// {
+  inherit storeName;
+
+  # The fetch name of an artifact: its proxy path, made a valid store name.
+  artifactName = artifact: storeName artifact.path;
+}
