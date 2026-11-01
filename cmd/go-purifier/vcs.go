@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"golang.org/x/mod/module"
@@ -21,9 +22,10 @@ import (
 )
 
 // A module that GONOPROXY (or GOPRIVATE) names is fetched by the go
-// command from its version control repository rather than from the proxy.
-// The lock records the repository checkout as a git entry, and the Nix
-// build makes the module's .mod and .zip files from the checkout with
+// command from its version control repository rather than from the proxy:
+// git, Mercurial, Subversion, Bazaar or Fossil. The lock records the
+// repository checkout as an entry of that system's kind, and the Nix build
+// makes the module's .mod and .zip files from the checkout with
 // `go-purifier module-files`, the same way the go command makes them.
 // go.sum then verifies both.
 
@@ -52,6 +54,7 @@ type origin struct {
 		URL    string
 		Subdir string
 		Hash   string
+		Ref    string
 	}
 }
 
@@ -66,11 +69,34 @@ func splitProxyPath(rel string) (escapedModule, file string, ok bool) {
 	return rel[:i], rel[i+len("/@v/"):], true
 }
 
+// vcsTools are what the lock run asks of the version control systems and
+// of Nix; tests replace them.
+type vcsTools struct {
+	// resolve is the fixed revision of a repository at a reference, for a
+	// system whose module origins name only the reference.
+	resolve func(vcs, url, ref string) (string, error)
+	// prefetch is the NAR hash of the checkout an entry names, as its
+	// fetcher produces it.
+	prefetch func(entry Artifact) (string, error)
+}
+
+func defaultVCSTools() vcsTools {
+	return vcsTools{
+		resolve: resolveRevision,
+		prefetch: func(entry Artifact) (string, error) {
+			if entry.Git != nil {
+				return prefetchGit(entry.Git.URL, entry.Git.Rev)
+			}
+			return prefetchWithNixpkgs(entry)
+		},
+	}
+}
+
 // vcsModules finds the module versions in a module download cache that
 // the go command fetched from version control, which are the ones
-// noProxy matches, and records each with a git entry for its checkout.
+// noProxy matches, and records each with an entry for its checkout.
 // Modules of one repository revision share an entry.
-func vcsModules(cacheDir, noProxy string, prefetch func(url, rev string) (string, error)) ([]VCSModule, []Artifact, error) {
+func vcsModules(cacheDir, noProxy string, tools vcsTools) ([]VCSModule, []Artifact, error) {
 	if noProxy == "" {
 		return []VCSModule{}, nil, nil
 	}
@@ -112,27 +138,24 @@ func vcsModules(cacheDir, noProxy string, prefetch func(url, rev string) (string
 			return fmt.Errorf("%s: %w", rel, err)
 		}
 		version := strings.TrimSuffix(file, ".info")
-		if info.Origin == nil || info.Origin.URL == "" || info.Origin.Hash == "" {
-			return fmt.Errorf("%s@%s: the go command recorded no origin for this module", modPath, version)
+		if info.Origin != nil && info.Origin.Hash == "" && info.Origin.Ref == "" {
+			info.Origin.Ref = pseudoVersionRevision(version)
 		}
-		if info.Origin.VCS != "git" {
-			return fmt.Errorf("%s@%s comes from a %s repository; go-purifier locks modules from git repositories and module proxies", modPath, version, info.Origin.VCS)
+		if info.Origin == nil || info.Origin.URL == "" || (info.Origin.Hash == "" && info.Origin.Ref == "") {
+			return fmt.Errorf("%s@%s: the go command recorded no repository and revision for this module (%s)", modPath, version, strings.TrimSpace(string(data)))
 		}
-		url := httpsURL(info.Origin.URL)
-		urlSum := sha256.Sum256([]byte(url))
-		entryPath := "vcs/" + hex.EncodeToString(urlSum[:6]) + "-" + info.Origin.Hash
-		if _, ok := entries[entryPath]; !ok {
-			hash, err := prefetch(url, info.Origin.Hash)
-			if err != nil {
+		entry, err := checkoutEntry(info.Origin.VCS, info.Origin.URL, info.Origin.Hash, info.Origin.Ref, tools)
+		if err != nil {
+			return fmt.Errorf("%s@%s: %w", modPath, version, err)
+		}
+		if _, ok := entries[entry.Path]; !ok {
+			if entry.Hash, err = tools.prefetch(entry); err != nil {
 				return err
 			}
-			entries[entryPath] = Artifact{
-				Path: entryPath,
-				Git:  &GitSource{URL: url, Rev: info.Origin.Hash, Submodules: false},
-				Hash: hash,
-			}
-			order = append(order, entryPath)
+			entries[entry.Path] = entry
+			order = append(order, entry.Path)
 		}
+		entryPath := entry.Path
 		mods = append(mods, VCSModule{
 			Module:   modPath,
 			Version:  version,
@@ -151,6 +174,125 @@ func vcsModules(cacheDir, noProxy string, prefetch func(url, rev string) (string
 		arts = append(arts, entries[p])
 	}
 	return mods, arts, nil
+}
+
+var plainRev = regexp.MustCompile(`^[A-Za-z0-9]+$`)
+
+// pseudoVersionRevision is the revision number a pseudo-version of a
+// Subversion or Bazaar module encodes, or "". The go command records no
+// revision in the .info file of such a version, but the last part of the
+// pseudo-version is the revision number, zero-padded to twelve digits.
+func pseudoVersionRevision(version string) string {
+	if !module.IsPseudoVersion(version) {
+		return ""
+	}
+	rev, err := module.PseudoVersionRev(version)
+	if err != nil || strings.Trim(rev, "0123456789") != "" {
+		return ""
+	}
+	if trimmed := strings.TrimLeft(rev, "0"); trimmed != "" {
+		return trimmed
+	}
+	return "0"
+}
+
+// checkoutEntry is the entry, without its hash, for the checkout of a
+// repository of system vcs at url, at the revision the go command
+// recorded: hash, or else the reference ref, which resolve fixes to a
+// revision. The entry kinds and their fields are those the nix-purifiers
+// share. A Subversion entry also says to leave out externals and to keep
+// keywords unexpanded, as the go command's `svn export` does.
+func checkoutEntry(vcs, url, hash, ref string, tools vcsTools) (Artifact, error) {
+	rev := hash
+	if rev == "" {
+		var err error
+		if rev, err = tools.resolve(vcs, url, ref); err != nil {
+			return Artifact{}, err
+		}
+	}
+	if vcs == "git" || vcs == "hg" {
+		url = httpsURL(url)
+	}
+	urlSum := sha256.Sum256([]byte(url))
+	name := rev
+	if !plainRev.MatchString(rev) {
+		revSum := sha256.Sum256([]byte(rev))
+		name = hex.EncodeToString(revSum[:12])
+	}
+	entry := Artifact{Path: "vcs/" + hex.EncodeToString(urlSum[:6]) + "-" + name}
+	switch vcs {
+	case "git":
+		entry.Git = &GitSource{URL: url, Rev: rev, Submodules: false}
+	case "hg":
+		entry.Hg = &HgSource{URL: url, Rev: rev, Subrepos: false}
+	case "svn":
+		entry.Svn = &SvnSource{URL: url, Rev: rev, IgnoreExternals: true, IgnoreKeywords: true}
+	case "bzr":
+		entry.Bzr = &RevSource{URL: url, Rev: rev}
+	case "fossil":
+		entry.Fossil = &RevSource{URL: url, Rev: rev}
+	default:
+		return Artifact{}, fmt.Errorf("the go command fetched it with %q, which go-purifier does not know", vcs)
+	}
+	return entry, nil
+}
+
+// resolveRevision fixes a reference of a Subversion or Bazaar repository
+// to a revision, the way the go command resolved it: the revision number
+// `svn log` reports for the reference, or the revision ID `bzr log`
+// reports.
+func resolveRevision(vcs, url, ref string) (string, error) {
+	switch vcs {
+	case "svn":
+		out, err := output("", "svn", "log", "-l1", "--xml", "--non-interactive", "--", url+"@"+ref)
+		if err != nil {
+			return "", err
+		}
+		m := regexp.MustCompile(`<logentry\s+revision="([0-9]+)"`).FindStringSubmatch(out)
+		if m == nil {
+			return "", fmt.Errorf("svn log printed no revision for %s@%s", url, ref)
+		}
+		return m[1], nil
+	case "bzr":
+		out, err := output("", "bzr", "log", "-l1", "--long", "--show-ids", "--revision="+ref, url)
+		if err != nil {
+			return "", err
+		}
+		m := regexp.MustCompile(`(?m)^revision-id:\s*(\S+)`).FindStringSubmatch(out)
+		if m == nil {
+			return "", fmt.Errorf("bzr log printed no revision ID for %s at %s", url, ref)
+		}
+		return "revid:" + m[1], nil
+	}
+	return "", fmt.Errorf("the go command recorded no revision of the %s repository %s", vcs, url)
+}
+
+// prefetchWithNixpkgs is the NAR hash of the checkout of a Mercurial,
+// Subversion, Bazaar or Fossil entry. It builds the entry with the nixpkgs
+// fetcher a build uses, and a placeholder hash, and reads the hash of the
+// result from the hash mismatch Nix reports.
+func prefetchWithNixpkgs(entry Artifact) (string, error) {
+	nixLib, nixpkgs := os.Getenv("GO_PURIFIER_NIX_LIB"), os.Getenv("GO_PURIFIER_NIXPKGS")
+	if nixLib == "" || nixpkgs == "" {
+		return "", errors.New("locking a module from a Mercurial, Subversion, Bazaar or Fossil repository needs GO_PURIFIER_NIX_LIB and GO_PURIFIER_NIXPKGS; run go-purifier from the go-purifier flake")
+	}
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return "", err
+	}
+	cmd := exec.Command("nix-build", filepath.Join(nixLib, "prefetch.nix"),
+		"--argstr", "nixpkgs", nixpkgs, "--argstr", "entry", string(data), "--no-out-link")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	runErr := cmd.Run()
+	if m := regexp.MustCompile(`got:\s+(sha256-[A-Za-z0-9+/=]+)`).FindStringSubmatch(stderr.String()); m != nil {
+		return m[1], nil
+	}
+	os.Stderr.Write(stderr.Bytes())
+	if runErr == nil {
+		return "", fmt.Errorf("prefetching %s: the placeholder hash matched", entry.Path)
+	}
+	return "", fmt.Errorf("prefetching %s: %w", entry.Path, runErr)
 }
 
 // httpsURL is the HTTPS URL of the repository at an SSH URL, such as

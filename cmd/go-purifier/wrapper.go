@@ -183,10 +183,14 @@ func realize(root, lockPath string) (string, error) {
 		return "", err
 	}
 	fmt.Fprintf(os.Stderr, "go-purifier: realizing %s through Nix\n", lockPath)
-	if err := run("nix-build", filepath.Join(nixLib, "realize.nix"),
+	args := []string{filepath.Join(nixLib, "realize.nix"),
 		"--argstr", "lockFile", lockPath,
 		"--argstr", "cli", self,
-		"--out-link", proxyLink, "--quiet"); err != nil {
+		"--out-link", proxyLink, "--quiet"}
+	if nixpkgs := os.Getenv("GO_PURIFIER_NIXPKGS"); nixpkgs != "" {
+		args = append(args, "--argstr", "nixpkgs", nixpkgs)
+	}
+	if err := run("nix-build", args...); err != nil {
 		return "", err
 	}
 	if err := os.WriteFile(stampPath, []byte(stamp), 0o644); err != nil {

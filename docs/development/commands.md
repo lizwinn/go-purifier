@@ -20,6 +20,12 @@ nix build '.#toolchain' --out-link toolchain
 tests/interactive.sh toolchain/bin
 tests/release.sh toolchain/bin
 
+# Modules from Mercurial, Subversion, Bazaar and Fossil repositories, which
+# the script serves on this host. Where the Nix daemon cannot reach this
+# host's loopback network, VCS_SYSTEMS_SKIP_NIX=1 runs only the check of
+# the module zips against go.sum.
+tests/vcs-systems.sh toolchain/bin
+
 # Renew the lockfiles of this repository and the fixtures (needs the
 # network; the vcs fixture also reaches github.com with git)
 purifier=$PWD/toolchain/bin/go-purifier
@@ -41,6 +47,9 @@ or the build of `cli` or of the fixture fails for want of a locked file.
 | `workspace` | a `go.work` workspace of two modules |
 | `replace` | a `replace` directive to a directory next to the lock root (`modRoot = "app"`) |
 | `vcs` | modules fetched from git through `GONOPROXY`, one in a repository subdirectory |
+
+`tests/vcs-systems.sh` makes its Mercurial, Subversion, Bazaar and Fossil
+modules when it runs, since they need servers.
 
 ## CI
 

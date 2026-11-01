@@ -13,13 +13,28 @@
   # The go-purifier command, which makes the files of modules from version
   # control. Only a lockfile with such modules needs it.
   cli ? null,
-  # Replace the default fetchers; see fetch.nix.
+  # The fetchers; see fetch.nix. callPackage gives the nixpkgs fetchers of
+  # the version control systems.
   fetchurl ? null,
   fetchgit ? null,
+  fetchhg ? null,
+  fetchsvn ? null,
+  fetchbzr ? null,
+  fetchfossil ? null,
 }:
 let
   lock = import ./lock.nix { inherit lockFile; };
-  fetch = import ./fetch.nix { inherit lock fetchurl fetchgit; };
+  fetch = import ./fetch.nix {
+    inherit
+      lock
+      fetchurl
+      fetchgit
+      fetchhg
+      fetchsvn
+      fetchbzr
+      fetchfossil
+      ;
+  };
   vcsModule = import ./vcs-module.nix {
     inherit lock fetch;
     cli =

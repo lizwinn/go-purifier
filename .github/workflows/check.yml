@@ -7,10 +7,12 @@
 # tests, and the formatting. It also evaluates the checks for
 # aarch64-linux.
 #
-# `outside-the-sandbox` runs what needs Nix or the network and so cannot
-# run in the Nix sandbox: interactive mode (tests/interactive.sh), the
-# release command (tests/release.sh), and the lock itself, which relocks
-# this repository and every fixture from the module proxy and from git and
+# `outside-the-sandbox` runs what needs Nix, servers or the network and so
+# cannot run in the Nix sandbox: interactive mode (tests/interactive.sh),
+# the release command (tests/release.sh), modules from Mercurial,
+# Subversion, Bazaar and Fossil repositories served on the runner
+# (tests/vcs-systems.sh), and the lock itself, which relocks this
+# repository and every fixture from the module proxy and from git and
 # fails when a lockfile differs from the committed one.
 name: check
 
@@ -44,6 +46,8 @@ jobs:
         run: tests/interactive.sh toolchain/bin
       - name: Release
         run: tests/release.sh toolchain/bin
+      - name: Modules from Mercurial, Subversion, Bazaar and Fossil
+        run: tests/vcs-systems.sh toolchain/bin
       - name: Relock this repository and the fixtures
         run: |
           for dir in . tests/fixtures/hello tests/fixtures/workspace tests/fixtures/replace/app tests/fixtures/vcs; do

@@ -3,9 +3,11 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -111,11 +113,14 @@ func TestVCSModules(t *testing.T) {
 		"example.com/public/@v/v1.0.0.info":       `{"Version":"v1.0.0","Time":"2024-01-02T03:04:05Z"}`,
 	})
 	prefetches := 0
-	prefetch := func(url, rev string) (string, error) {
-		prefetches++
-		return "sha256-checkout", nil
+	tools := vcsTools{
+		resolve: func(vcs, url, ref string) (string, error) { return "", errors.New("git origins carry their commit") },
+		prefetch: func(Artifact) (string, error) {
+			prefetches++
+			return "sha256-checkout", nil
+		},
 	}
-	mods, checkouts, err := vcsModules(dir, "example.com/Private", prefetch)
+	mods, checkouts, err := vcsModules(dir, "example.com/Private", tools)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,6 +140,20 @@ func TestVCSModules(t *testing.T) {
 	}
 }
 
+func TestPseudoVersionRevision(t *testing.T) {
+	cases := map[string]string{
+		"v0.0.0-20261101084936-000000000001": "1",
+		"v0.0.0-20261101084936-000000004200": "4200",
+		"v0.0.0-20261101084936-bc8d4a154f48": "",
+		"v1.2.3":                             "",
+	}
+	for version, want := range cases {
+		if got := pseudoVersionRevision(version); got != want {
+			t.Errorf("pseudoVersionRevision(%q) = %q, want %q", version, got, want)
+		}
+	}
+}
+
 func TestHTTPSURL(t *testing.T) {
 	cases := map[string]string{
 		"git@github.com:org/repo.git":        "https://github.com/org/repo.git",
@@ -150,13 +169,47 @@ func TestHTTPSURL(t *testing.T) {
 	}
 }
 
-func TestVCSModulesRejectsOtherVCS(t *testing.T) {
-	dir := t.TempDir()
-	writeFiles(t, dir, map[string]string{
-		"example.com/hg/@v/v1.0.0.info": `{"Version":"v1.0.0","Origin":{"VCS":"hg","URL":"https://hg.example/hg","Hash":"abc"}}`,
-	})
-	if _, _, err := vcsModules(dir, "example.com/hg", func(string, string) (string, error) { return "", nil }); err == nil {
-		t.Error("a module from a Mercurial repository was locked")
+// Each version control system gets the entry kind the nix-purifiers share.
+// Mercurial and Fossil origins carry their revision; Subversion and Bazaar
+// origins carry only the reference, which the lock resolves.
+func TestCheckoutEntry(t *testing.T) {
+	resolved := map[string]string{
+		"svn https://svn.example/repo v1.0.0": "42",
+		"bzr https://bzr.example/repo v1.0.0": "revid:jdoe@example-20240102-abc",
+	}
+	tools := vcsTools{
+		resolve: func(vcs, url, ref string) (string, error) {
+			if rev, ok := resolved[vcs+" "+url+" "+ref]; ok {
+				return rev, nil
+			}
+			return "", errors.New("no revision")
+		},
+	}
+	cases := []struct {
+		vcs, url, hash, ref string
+		want                Artifact
+	}{
+		{"hg", "ssh://hg@hg.example/repo", "0123456789ab", "", Artifact{Hg: &HgSource{URL: "https://hg.example/repo", Rev: "0123456789ab"}}},
+		{"svn", "https://svn.example/repo", "", "v1.0.0", Artifact{Svn: &SvnSource{URL: "https://svn.example/repo", Rev: "42", IgnoreExternals: true, IgnoreKeywords: true}}},
+		{"bzr", "https://bzr.example/repo", "", "v1.0.0", Artifact{Bzr: &RevSource{URL: "https://bzr.example/repo", Rev: "revid:jdoe@example-20240102-abc"}}},
+		{"fossil", "https://fossil.example/repo", "abcdef0123", "", Artifact{Fossil: &RevSource{URL: "https://fossil.example/repo", Rev: "abcdef0123"}}},
+	}
+	for _, c := range cases {
+		got, err := checkoutEntry(c.vcs, c.url, c.hash, c.ref, tools)
+		if err != nil {
+			t.Errorf("checkoutEntry(%s): %v", c.vcs, err)
+			continue
+		}
+		if !strings.HasPrefix(got.Path, "vcs/") || strings.ContainsAny(strings.TrimPrefix(got.Path, "vcs/"), "/:@") {
+			t.Errorf("checkoutEntry(%s).Path = %q, want a plain name under vcs/", c.vcs, got.Path)
+		}
+		got.Path = ""
+		if !reflect.DeepEqual(got, c.want) {
+			t.Errorf("checkoutEntry(%s) = %#v, want %#v", c.vcs, got, c.want)
+		}
+	}
+	if _, err := checkoutEntry("darcs", "https://example/repo", "abc", "", tools); err == nil {
+		t.Error("an unknown version control system was accepted")
 	}
 }
 

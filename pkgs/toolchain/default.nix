@@ -6,16 +6,22 @@
 # otherwise. `go-purifier` sits beside it, for `go-purifier lock` and
 # `go-purifier release`.
 #
-# Both take git, for modules from version control, and nix-prefetch-git,
-# for locking them, from the end of PATH, so a git on the user's PATH
-# comes first. `go-purifier release` builds with the nixpkgs of this
-# package set.
+# Both take the clients of the version control systems the go command
+# fetches modules with (git, Mercurial, Subversion, Breezy for Bazaar, and
+# Fossil), and nix-prefetch-git for locking git modules, from the end of
+# PATH, so the user's own clients come first. Locking and realizing
+# checkouts of the other systems, and `go-purifier release`, use the
+# nixpkgs of this package set.
 {
   lib,
   runCommand,
   makeWrapper,
   go,
   git,
+  mercurial,
+  subversion,
+  breezy,
+  fossil,
   nix-prefetch-git,
   path,
   cli,
@@ -36,6 +42,10 @@ let
     ":"
     (lib.makeBinPath [
       git
+      mercurial
+      subversion
+      breezy
+      fossil
       nix-prefetch-git
     ])
   ];

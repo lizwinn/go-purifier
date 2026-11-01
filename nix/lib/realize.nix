@@ -14,11 +14,26 @@
   lockFile,
   # The go-purifier command, as an absolute path into the store.
   cli,
+  # The nixpkgs the go-purifier flake was built with, whose fetchers fetch
+  # Mercurial, Subversion, Bazaar and Fossil checkouts. A lockfile with
+  # only proxy files and git checkouts does not import it.
+  nixpkgs ? "",
   libDir ? ./.,
 }:
 let
   lock = import (libDir + "/lock.nix") { inherit lockFile; };
-  fetch = import (libDir + "/fetch.nix") { inherit lock; };
+  pkgs =
+    if nixpkgs == "" then
+      throw "go-purifier: the lockfile has checkouts that need nixpkgs; run go from the go-purifier flake"
+    else
+      import nixpkgs { };
+  fetch = import (libDir + "/fetch.nix") {
+    inherit lock;
+    fetchhg = pkgs.fetchhg;
+    fetchsvn = pkgs.fetchsvn;
+    fetchbzr = pkgs.fetchbzr;
+    fetchfossil = pkgs.fetchfossil;
+  };
   # The store object of the command, and the path of the command inside
   # it. storePath adds the store object to the string context of the
   # path, so the builds that run the command may read it.

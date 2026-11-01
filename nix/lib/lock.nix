@@ -41,13 +41,13 @@ lock
   # The fetch name of an entry: its tree path, made a valid store name.
   artifactName = artifact: storeName artifact.path;
 
-  # The file entries, which are proxy files, and the git entries, which
-  # are checkouts of the repositories of modules from version control.
+  # The file entries, which are proxy files, and every other entry, which
+  # is a checkout of the repository of a module from version control.
   files = builtins.filter (a: a ? url) lock.artifacts;
   checkouts = builtins.listToAttrs (
     map (a: {
       name = a.path;
       value = a;
-    }) (builtins.filter (a: a ? git) lock.artifacts)
+    }) (builtins.filter (a: !(a ? url)) lock.artifacts)
   );
 }

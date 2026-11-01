@@ -7,9 +7,11 @@ generated Nix files to your repository.
 
 - **A lockfile.** `go-purifier lock` writes `go-purifier.lock.json` next
   to `go.mod`, or next to `go.work` for a workspace. It lists every
-  download of the build: module files from the module proxy, by URL and
-  SHA-256, and checkouts of git repositories for modules that `GOPRIVATE`
-  or `GONOPROXY` names. It also lists the commands of the build.
+  download of the build. It lists each module file from the module proxy
+  by its URL and SHA-256. For each module that `GOPRIVATE` or `GONOPROXY`
+  names, it lists a checkout of the git, Mercurial, Subversion, Bazaar or
+  Fossil repository the module comes from. It also lists the commands of
+  the build.
 - **Sandboxed builds.** `buildGoProject`, which the flake's overlay adds
   to a package set, builds from the lockfile with no network access.
   `packages.<name>` is each command.
@@ -45,20 +47,28 @@ The lockfile then gets two kinds of entry:
 - **Proxy files.** Each `.mod` and `.zip` file in the module download
   cache. The download cache has the layout of a module proxy, so a file's
   path in the cache is also its path under the proxy URL.
-- **Git checkouts.** For each module that `GONOPROXY` (or `GOPRIVATE`)
-  matches, the go command fetched it from its repository and recorded the
-  repository URL, commit and subdirectory in the cache. The lockfile
-  records the checkout with the NAR hash `nix-prefetch-git` reports, and
-  the module's version and subdirectory. The Nix build makes the module's
-  `.mod` and `.zip` files from the checkout with `go-purifier
-  module-files`, following the go command's own rules, and go.sum
-  verifies them. An SSH URL is recorded as the HTTPS URL of the same host,
-  since the Nix sandbox has no SSH keys.
+- **Repository checkouts.** The go command fetches each module that
+  `GONOPROXY` (or `GOPRIVATE`) matches from its git, Mercurial,
+  Subversion, Bazaar or Fossil repository. It records the repository URL
+  and the module's subdirectory in the cache. For git, Mercurial and
+  Fossil it also records the revision. For Subversion and Bazaar, the lock
+  run resolves the revision with `svn log` or `bzr log`, from the
+  reference or the pseudo-version the go command used. The lockfile
+  records each checkout with its NAR hash. For git that is the hash
+  `nix-prefetch-git` reports; for the other systems it is the hash of the
+  checkout the nixpkgs fetcher of that system makes. The Nix build makes
+  the `.mod` and `.zip` files of each module from its checkout with
+  `go-purifier module-files`, following the go command's own rules, and
+  go.sum verifies them. The lockfile records an SSH URL of a git or
+  Mercurial repository as the HTTPS URL of the same host, since the Nix
+  sandbox has no SSH keys.
 
 The lock proxy is `GO_PURIFIER_PROXY` when it is set, or else the first
 proxy URL in `GOPROXY`, or else `https://proxy.golang.org`. The lockfile
 records the `GONOPROXY` patterns, and a relock without `GONOPROXY` or
-`GOPRIVATE` in the environment uses them again.
+`GOPRIVATE` in the environment uses them again, as `GOPRIVATE` as well, so
+`GOVCS` lets the go command use any version control system for them. The
+lock run also keeps the user's `GOINSECURE` and `GOVCS`.
 
 The lockfile also records the files that define the dependencies:
 `go.work` and `go.work.sum` for a workspace, and the `go.mod` and `go.sum`
@@ -181,11 +191,11 @@ asks the lock proxy for the new version so the proxy caches it.
 
 ## Limits
 
-- **Modules from Mercurial, Subversion, Bazaar or Fossil repositories**
-  that `GONOPROXY` names fail the lock run. The lockfile shares its entry
-  kinds with the other nix-purifiers, and those have entries for files
-  and git checkouts only. The same modules lock from a module proxy that
-  serves them.
+- **Checkouts of the other systems need nixpkgs.** Interactive mode
+  fetches Mercurial, Subversion, Bazaar and Fossil checkouts with the
+  nixpkgs fetchers, so a build that has them imports the nixpkgs of the
+  go-purifier flake. A build with only proxy files and git checkouts needs
+  only Nix.
 - **`.gitattributes` export rules.** The go command makes the zip of a
   module from version control with `git archive`, which leaves out files
   marked `export-ignore` and expands `export-subst`. go-purifier makes the

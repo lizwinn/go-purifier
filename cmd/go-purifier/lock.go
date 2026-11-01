@@ -87,6 +87,10 @@ type Artifact struct {
 	URL     string     `json:"url,omitempty"`
 	Mirrors *[]string  `json:"mirrors,omitempty"`
 	Git     *GitSource `json:"git,omitempty"`
+	Hg      *HgSource  `json:"hg,omitempty"`
+	Svn     *SvnSource `json:"svn,omitempty"`
+	Bzr     *RevSource `json:"bzr,omitempty"`
+	Fossil  *RevSource `json:"fossil,omitempty"`
 	// The SHA-256 of a file, or the NAR hash of a checkout, in SRI form.
 	Hash string `json:"hash"`
 }
@@ -98,17 +102,41 @@ type GitSource struct {
 	Submodules bool   `json:"submodules"`
 }
 
+// HgSource is the repository and revision of a Mercurial entry.
+type HgSource struct {
+	URL      string `json:"url"`
+	Rev      string `json:"rev"`
+	Subrepos bool   `json:"subrepos"`
+}
+
+// SvnSource is the repository and revision of a Subversion entry.
+type SvnSource struct {
+	URL             string `json:"url"`
+	Rev             string `json:"rev"`
+	IgnoreExternals bool   `json:"ignoreExternals"`
+	IgnoreKeywords  bool   `json:"ignoreKeywords"`
+}
+
+// RevSource is the repository and revision of a Bazaar or Fossil entry.
+type RevSource struct {
+	URL string `json:"url"`
+	Rev string `json:"rev"`
+}
+
 // goEnv is the go command's view of the user's environment and go env
 // file, read before the lock run replaces both.
 type goEnv struct {
-	GOWORK    string
-	GOMOD     string
-	GOPROXY   string
-	GONOPROXY string
+	GOWORK     string
+	GOMOD      string
+	GOPROXY    string
+	GONOPROXY  string
+	GOPRIVATE  string
+	GOINSECURE string
+	GOVCS      string
 }
 
 func readGoEnv(goBin, dir string) (goEnv, error) {
-	out, err := goOutput(goBin, dir, os.Environ(), "env", "-json", "GOWORK", "GOMOD", "GOPROXY", "GONOPROXY")
+	out, err := goOutput(goBin, dir, os.Environ(), "env", "-json", "GOWORK", "GOMOD", "GOPROXY", "GONOPROXY", "GOPRIVATE", "GOINSECURE", "GOVCS")
 	if err != nil {
 		return goEnv{}, err
 	}
@@ -164,7 +192,11 @@ func lockCommand(force bool) error {
 		noProxy = existing.NoProxy
 	}
 	fmt.Fprintf(os.Stderr, "go-purifier: locking %s from %s\n", root, proxy)
-	lock, err := makeLock(goBin, root, workspace, proxy, noProxy, prefetchGit)
+	settings := lockSettings{NoProxy: noProxy, Private: env.GOPRIVATE, Insecure: env.GOINSECURE, VCS: env.GOVCS}
+	if settings.Private == "" {
+		settings.Private = noProxy
+	}
+	lock, err := makeLock(goBin, root, workspace, proxy, settings, defaultVCSTools())
 	if err != nil {
 		return err
 	}
@@ -195,16 +227,30 @@ func lockProxy(goproxy string) string {
 	return defaultProxy
 }
 
+// lockSettings are the go settings of the lock run that concern modules
+// from version control.
+type lockSettings struct {
+	// The GONOPROXY patterns: the modules fetched from version control.
+	NoProxy string
+	// The GOPRIVATE patterns, which make GOVCS treat a module as private.
+	Private string
+	// The GOINSECURE patterns, which let the go command fetch the modules
+	// they match over plain HTTP.
+	Insecure string
+	// GOVCS, the version control systems the go command may use.
+	VCS string
+}
+
 // lockEnv is the environment of the lock run: an empty GOPATH, module
-// cache and build cache under tmp, every module outside noProxy from the
-// one proxy, and none of the user's go env file. The modules noProxy
-// matches come from version control and skip the checksum database;
-// go.sum still verifies them.
-func lockEnv(tmp, proxy, noProxy string) []string {
+// cache and build cache under tmp, every module outside the GONOPROXY
+// patterns from the one proxy, and none of the user's go env file. The
+// modules GONOPROXY matches come from version control and skip the
+// checksum database; go.sum still verifies them.
+func lockEnv(tmp, proxy string, s lockSettings) []string {
 	drop := map[string]bool{
 		"GOENV": true, "GOPATH": true, "GOMODCACHE": true, "GOCACHE": true, "GOPROXY": true,
 		"GOFLAGS": true, "GOTOOLCHAIN": true, "GOPRIVATE": true, "GONOPROXY": true,
-		"GONOSUMDB": true, "GOINSECURE": true, "GO_PURIFIER": true,
+		"GONOSUMDB": true, "GOINSECURE": true, "GOVCS": true, "GO_PURIFIER": true,
 	}
 	var env []string
 	for _, kv := range os.Environ() {
@@ -222,8 +268,16 @@ func lockEnv(tmp, proxy, noProxy string) []string {
 		"GOFLAGS=-mod=readonly",
 		"GOTOOLCHAIN=local",
 	)
-	if noProxy != "" {
-		env = append(env, "GONOPROXY="+noProxy, "GONOSUMDB="+noProxy)
+	for _, kv := range [][2]string{
+		{"GONOPROXY", s.NoProxy},
+		{"GONOSUMDB", s.NoProxy},
+		{"GOPRIVATE", s.Private},
+		{"GOINSECURE", s.Insecure},
+		{"GOVCS", s.VCS},
+	} {
+		if kv[1] != "" {
+			env = append(env, kv[0]+"="+kv[1])
+		}
 	}
 	return env
 }
@@ -256,12 +310,13 @@ func decodeModules(out string) ([]listedModule, error) {
 
 // makeLock runs the lock: it downloads what building and testing every
 // package of the main modules needs, then records the downloads.
-func makeLock(goBin, root string, workspace bool, proxy, noProxy string, prefetch func(url, rev string) (string, error)) (*Lock, error) {
+func makeLock(goBin, root string, workspace bool, proxy string, settings lockSettings, tools vcsTools) (*Lock, error) {
+	noProxy := settings.NoProxy
 	tmp, err := os.MkdirTemp("", "go-purifier-lock-")
 	if err != nil {
 		return nil, err
 	}
-	env := lockEnv(tmp, proxy, noProxy)
+	env := lockEnv(tmp, proxy, settings)
 	defer removeModCache(goBin, root, env, tmp)
 
 	goVersion, err := goOutput(goBin, root, env, "env", "GOVERSION")
@@ -326,7 +381,7 @@ func makeLock(goBin, root string, workspace bool, proxy, noProxy string, prefetc
 	if err != nil {
 		return nil, err
 	}
-	vcs, checkouts, err := vcsModules(cacheDir, noProxy, prefetch)
+	vcs, checkouts, err := vcsModules(cacheDir, noProxy, tools)
 	if err != nil {
 		return nil, err
 	}
