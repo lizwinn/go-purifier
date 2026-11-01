@@ -191,7 +191,9 @@ for kind in hg svn bzr fossil; do
 done
 
 expected="hgmod svnmod bzrmod fossilmod"
-built=$(nix build --impure --no-link --print-out-paths --expr "
+# Nix fetches the inputs of the go-purifier flake from GitHub directly,
+# and not through the proxy of example.invalid.
+built=$(env -u HTTP_PROXY -u HTTPS_PROXY nix build --impure --no-link --print-out-paths --expr "
   let
     flake = builtins.getFlake \"git+file:$repo\";
     pkgs = import flake.inputs.nixpkgs { system = builtins.currentSystem; };
