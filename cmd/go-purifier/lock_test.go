@@ -264,3 +264,19 @@ func TestDefinitionFiles(t *testing.T) {
 		t.Errorf("definitionFiles = %q, want %q", got, want)
 	}
 }
+
+// Only a tidy that adds go.sum lines and leaves go.mod alone completes
+// go.sum.
+func TestOnlyAddsToGoSum(t *testing.T) {
+	cases := map[string]bool{
+		"--- current/go.sum\n+++ tidy/go.sum\n@@ -0,0 +1 @@\n+golang.org/x/text v0.21.0 h1:x\n":                                               true,
+		"--- current/go.sum\n+++ tidy/go.sum\n@@ -1 +0,0 @@\n-golang.org/x/text v0.21.0 h1:x\n":                                               false,
+		"--- current/go.mod\n+++ tidy/go.mod\n@@ -1 +1,2 @@\n+require x v1\n--- current/go.sum\n+++ tidy/go.sum\n@@ -0,0 +1 @@\n+x v1 h1:x\n": false,
+		"": false,
+	}
+	for diff, want := range cases {
+		if got := onlyAddsToGoSum(diff); got != want {
+			t.Errorf("onlyAddsToGoSum(%q) = %v, want %v", diff, got, want)
+		}
+	}
+}

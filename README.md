@@ -128,11 +128,13 @@ Every error names the command that fixes it.
 | The lockfile has another format version | Both name the version and say to run `go-purifier lock`. |
 | There is no lockfile | `buildGoProject` names the path where it looked and says to run `go-purifier lock`. |
 | A `replace` directive points outside `src` | The Nix build says to widen `src` and to set `modRoot`. |
+| `go.mod` lacks a module that the code imports | `go-purifier lock` stops with the go command's error and says to run `go mod tidy`, then `go-purifier lock` again. |
 
-A missing download and a `replace` directive outside `src` show only when
-the go command runs, so the build reports them. `readLock` reports each of
-the others as an entry of `problems`, rather than as an evaluation error,
-except a lockfile that is not JSON: Nix cannot catch an error of
+The last row is an error of the lock run. A missing download and a
+`replace` directive outside `src` show only when the go command runs, so
+the build reports them. `readLock` reports each of the other mistakes as
+an entry of `problems`, rather than as an evaluation error, except a
+lockfile that is not JSON: Nix cannot catch an error of
 `builtins.fromJSON`, so evaluation fails with the file named and the
 command to run.
 
@@ -144,9 +146,12 @@ every module outside `GONOPROXY` coming from one proxy. It runs
 `go list -m all`, which downloads the `go.mod` file of every module in the
 module graph, and `go list all`, which downloads every module whose
 packages the main modules or their tests import. The lock run keeps the
-resolution of `go.mod` and `go.sum` as they are, and a lock of an
-unchanged project writes the same lockfile byte for byte. Run
-`go mod tidy` first if `go.sum` is incomplete.
+resolution of `go.mod` as it is, and a lock of an unchanged project
+writes the same lockfile byte for byte. When `go.sum` of a module lacks
+entries and `go.mod` needs no change, the lock first runs `go mod tidy`,
+which adds them and leaves `go.mod` as it is. In a workspace the lock does
+not change `go.sum`, and an incomplete `go.sum` stops it with the go
+command's error.
 
 The lockfile holds what Nix needs and `go.mod` and `go.sum` cannot give
 it, since `go.sum` records hashes of module contents and not of the files

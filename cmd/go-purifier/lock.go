@@ -195,6 +195,11 @@ func lockAt(goBin, dir, lockFlag string) error {
 		return err
 	}
 	lockPath := lockPathAt(root, lockFlag)
+	if !workspace {
+		if err := completeGoSum(goBin, root); err != nil {
+			return err
+		}
+	}
 	proxy := lockProxy(env.GOPROXY)
 	// A lock without GONOPROXY or GOPRIVATE in the environment takes the
 	// patterns of the previous lockfile (previousNoProxy).
@@ -209,7 +214,7 @@ func lockAt(goBin, dir, lockFlag string) error {
 	}
 	lock, err := makeLock(goBin, root, workspace, proxy, settings, defaultVCSTools())
 	if err != nil {
-		return err
+		return fmt.Errorf("%w\nThe lock reads go.mod as it is. When the go command says that go.mod lacks a module, run `go mod tidy`, then `go-purifier lock` again.", err)
 	}
 	if err := writeLock(lockPath, lock); err != nil {
 		return err
