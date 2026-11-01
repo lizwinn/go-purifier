@@ -16,10 +16,10 @@
 let
   inherit (pkgs) lib runCommand;
   # The package set with the go-purifier overlay, which adds the scope
-  # `go-purifier` and the builder `buildGoProject`.
+  # `go-purifier`, whose `buildGoProject` is the builder.
   withOverlay = pkgs.extend overlay;
   packages = withOverlay.go-purifier;
-  build = withOverlay.buildGoProject;
+  build = packages.buildGoProject;
 
   # A module with proxy dependencies, one of them case-encoded, and a
   # dependency only its tests load.
@@ -158,14 +158,14 @@ in
       "0.74.5 (c0a193e0)";
   real-world-fzf-tests = fzf.tests;
 
-  # A package written for callPackage, in an overlay, takes the builder by
-  # name.
+  # A package written for callPackage, in an overlay, takes the scope by
+  # name and the builder from it.
   overlay-consumer =
     let
       consumerSet = withOverlay.extend (
         final: prev: {
           greet = final.callPackage (
-            { buildGoProject }: (buildGoProject { src = ./fixtures/hello; }).packages.greet
+            { go-purifier }: (go-purifier.buildGoProject { src = ./fixtures/hello; }).packages.greet
           ) { };
         }
       );
@@ -174,18 +174,38 @@ in
       "printf 'name = \"Nix\"\\nlanguage = \"de\"\\n' | ${lib.getExe consumerSet.greet}"
       "Hello, Nix (German)";
 
-  # buildGoProject.override replaces what the builder takes from the
-  # package set, here the go toolchain.
+  # The scope `go-purifier` is the one attribute the overlay adds to the
+  # package set.
+  overlay-adds-the-scope =
+    assert builtins.attrNames (overlay withOverlay pkgs) == [ "go-purifier" ];
+    runCommand "overlay-adds-the-scope" { } "touch $out";
+
+  # buildGoProject.override replaces what the builder takes, here the go
+  # toolchain.
   overlay-override =
     let
       marker = pkgs.symlinkJoin {
         name = "go-override-marker";
         paths = [ pkgs.go ];
       };
-      overridden = (withOverlay.buildGoProject.override { go = marker; }) { src = ./fixtures/hello; };
+      overridden = (packages.buildGoProject.override { go = marker; }) { src = ./fixtures/hello; };
     in
     assert builtins.elem marker overridden.all.nativeBuildInputs;
     prints "overlay-override" "${lib.getExe overridden.packages.uuidgen} | wc -c" "37";
+
+  # go-purifier.overrideScope replaces what the scope shares, here the go
+  # toolchain, for the builder and the packages that use it.
+  overlay-override-scope =
+    let
+      marker = pkgs.symlinkJoin {
+        name = "go-scope-marker";
+        paths = [ pkgs.go ];
+      };
+      scoped = packages.overrideScope (_final: _prev: { go = marker; });
+      built = scoped.buildGoProject { src = ./fixtures/hello; };
+    in
+    assert builtins.elem marker built.all.nativeBuildInputs;
+    prints "overlay-override-scope" "${lib.getExe built.packages.uuidgen} | wc -c" "37";
 
   fixture-hello-greet =
     prints "fixture-hello-greet"

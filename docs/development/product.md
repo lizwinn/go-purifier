@@ -45,9 +45,10 @@ repositories with `--ignore-externals --ignore-keywords`.
   proxy tree for the sandbox, and `realize.nix` builds it for interactive
   mode, importing nixpkgs only for checkouts from Mercurial, Subversion,
   Bazaar or Fossil repositories. `build-go-project.nix` is the package
-  `buildGoProject`, which the default package overlay
-  (`pkg-overlays/default`) adds to the package set with `callPackage`, and
-  `release.nix` is what `go-purifier publish` builds.
+  `buildGoProject`, which `pkgs/default.nix` adds to the `go-purifier`
+  scope that the default package overlay (`pkg-overlays/default`) adds to
+  the package set, and `release.nix` is what `go-purifier publish`
+  builds.
 - The packages (`pkgs`). `cli` is the go-purifier command, built by
   `buildGoProject` from this repository's own lockfile. `toolchain` is the
   nixpkgs go toolchain with `go` replaced by the go-purifier wrapper, with

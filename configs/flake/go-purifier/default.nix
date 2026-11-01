@@ -16,12 +16,13 @@
       inherit (libOverlays) default;
     };
 
-    # The packages are the `default` entry of this flake's package overlay
-    # registry (pkg-overlays/): the package set applies it by default, and
-    # the flake exports it as `pkgOverlays` and as the plain
-    # `overlays.default`.
+    # The scope `go-purifier` is the `default` entry of this flake's package
+    # overlay registry (pkg-overlays/): the package set applies it by
+    # default, and the flake exports it as `pkgOverlays` and as the plain
+    # `overlays.default`. The scope holds the builder, a function, so the
+    # flake lists the packages of the scope under `packages` itself.
     nixpkgs = {
-      packages.export.enabled = true;
+      packages.export.enabled = false;
     };
   };
 
@@ -32,11 +33,14 @@
   # toolchain: its `go` runs against the locked downloads, and its gopls
   # runs that `go`.
   perSystem =
-    { config, pkgs, ... }:
+    { pkgs, ... }:
     {
-      packages.default = config.packages.toolchain;
+      packages = {
+        inherit (pkgs.go-purifier) cli toolchain;
+        default = pkgs.go-purifier.toolchain;
+      };
       devShells.default = pkgs.mkShell {
-        packages = [ config.packages.toolchain ];
+        packages = [ pkgs.go-purifier.toolchain ];
       };
     };
 

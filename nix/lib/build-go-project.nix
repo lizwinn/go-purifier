@@ -5,15 +5,16 @@
 # next to go.work for a workspace).
 #
 # The file is a package for callPackage: the first argument set is what it
-# takes from the package set, and the result is the builder. The
-# go-purifier overlay (`overlays.default`) adds it to the package set as
-# `buildGoProject`, so a package written for callPackage takes it like any
-# other builder:
+# takes from the go-purifier scope (pkgs/default.nix) and the package set
+# behind it, and the result is the builder. The go-purifier overlay
+# (`overlays.default`) adds the scope to the package set as `go-purifier`,
+# so a package written for callPackage takes the builder from it:
 #
-#   { buildGoProject }: (buildGoProject { src = ./.; }).packages.hello
+#   { go-purifier }: (go-purifier.buildGoProject { src = ./.; }).packages.hello
 #
-# and `buildGoProject.override` replaces what it takes from the set. The
-# builder returns
+# `go-purifier.overrideScope` replaces what the scope shares, and
+# `go-purifier.buildGoProject.override` replaces what the builder takes.
+# The builder returns
 #
 #   packages.<name>  the command <name>, for each main package of the main
 #                    modules the lockfile names

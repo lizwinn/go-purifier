@@ -23,14 +23,15 @@ for a workspace. We recommend committing it to the repository together
 with `go.sum`, and the builder and the commands look for both there by
 default.
 
-The flake's `overlays.default` adds the builder `buildGoProject` to a
-package set, where nixpkgs keeps its own builders. A package written for
-`callPackage` takes it by name:
+The flake's `overlays.default` adds one attribute to a package set, the
+scope `go-purifier`. The scope holds the builder `buildGoProject`, the
+`go-purifier` command and the toolchain package. A package written for
+`callPackage` takes the scope by name:
 
 ```nix
 # package.nix
-{ buildGoProject }:
-(buildGoProject { src = ./.; }).packages.hello
+{ go-purifier }:
+(go-purifier.buildGoProject { src = ./.; }).packages.hello
 ```
 
 ```nix
@@ -74,9 +75,13 @@ as a `fetchurl` with credentials or a company mirror. `version`, `tags`,
 `ldflags`, `buildInputs`, `nativeBuildInputs` and `srcFilter` do what
 their names say.
 
-`buildGoProject.override` replaces what the builder takes from the
-package set. `buildGoProject.override { go = pkgs.go_1_26; }` builds with
-another go toolchain.
+`go-purifier.overrideScope` replaces what the scope shares, and
+`go-purifier.buildGoProject.override` replaces what the builder takes.
+Both build with another go toolchain:
+
+```nix
+pkgs.go-purifier.overrideScope (final: prev: { go = pkgs.go_1_26; })
+```
 
 A flake can also keep the build of a project external, such as to
 package a project whose repository holds no go-purifier lockfile. The
@@ -221,7 +226,7 @@ These limits affect a build:
   `GOTOOLCHAIN=local`, because Go's toolchain downloads are per-platform
   modules and would tie a lockfile to the system that made it. `go.mod`'s
   `go` line has to be at most the version of the toolchain in use;
-  `buildGoProject.override { go = ...; }` selects a newer one.
+  `go-purifier.overrideScope` with a newer `go` selects it.
 - **`.gitattributes` export rules break a module from git.** The go
   command makes the zip of such a module with `git archive`, which drops
   files marked `export-ignore` and expands `export-subst`. go-purifier
@@ -259,7 +264,7 @@ to the linker, so the flake does the same with `ldflags`:
         inherit system;
         overlays = [ go-purifier.overlays.default ];
       };
-      build = pkgs.buildGoProject {
+      build = pkgs.go-purifier.buildGoProject {
         src = ./.;
         ldflags = [ "-X main.version=0.74.5" ];
       };
@@ -291,8 +296,8 @@ Your flake calls it with `callPackage` from a package set with
 
 ```nix
 # fzf.nix
-{ buildGoProject, fetchFromGitHub }:
-(buildGoProject {
+{ go-purifier, fetchFromGitHub }:
+(go-purifier.buildGoProject {
   src = fetchFromGitHub {
     owner = "junegunn";
     repo = "fzf";
