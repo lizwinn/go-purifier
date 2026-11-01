@@ -198,18 +198,19 @@ These sources are refused or unsupported:
   fetches files, fail in the sandbox. C libraries for cgo packages come
   from `buildInputs`, not from the lockfile.
 
-## Real-world projects
+## Examples
 
-[fzf](https://github.com/junegunn/fzf) v0.74.5 builds from its GitHub
-source, which holds no go-purifier lockfile, with a lockfile kept in this
-repository at `tests/real-world/fzf/go-purifier.lock.json`. The flake's
+CI locks and builds [fzf](https://github.com/junegunn/fzf) v0.74.5 as an
+example of an external build. fzf's source on GitHub holds no go-purifier
+lockfile, and this repository keeps one for it at
+`tests/real-world/fzf/go-purifier.lock.json`. The build in
+`tests/default.nix` is a `buildGoProject` call with the source fetched
+from GitHub, that `lockFile`, and the `-X main.version` and
+`-X main.revision` flags of fzf's Makefile as `ldflags`. The flake's
 checks `real-world-fzf`, `real-world-fzf-version` and
-`real-world-fzf-tests` run its filter mode, print its version, and run its
-unit tests in the sandbox. CI locks fzf again and fails unless the
-lockfile comes out byte for byte as committed. The build is a
-`buildGoProject` call with the source fetched from GitHub, `lockFile`, and
-the `-X main.version` and `-X main.revision` flags of fzf's Makefile as
-`ldflags`. It is in `tests/default.nix`.
+`real-world-fzf-tests` run fzf's filter mode, print its version, and run
+its unit tests in the sandbox. CI also locks fzf again and fails unless
+the lockfile comes out byte for byte as committed.
 
 ## Credits
 

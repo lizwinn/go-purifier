@@ -133,9 +133,10 @@ in
       "printf 'name = \"Nix\"\\nlanguage = \"de\"\\n' | ${lib.getExe external.packages.greet}"
       "Hello, Nix (German)";
 
-  # fzf v0.74.5, a real-world project, built from its GitHub source with a
-  # lockfile kept in this repository (tests/real-world/fzf). The check
-  # runs fzf's filter mode and its unit tests.
+  # fzf v0.74.5, an example of an external build: fzf is built from its
+  # GitHub source with a lockfile kept in this repository
+  # (tests/real-world/fzf). The checks run fzf's filter mode, print its
+  # version and run its unit tests.
   real-world-fzf =
     prints "real-world-fzf"
       "printf 'apple\\nbanana\\ncherry\\n' | ${lib.getExe fzf.packages.fzf} --filter nan"
