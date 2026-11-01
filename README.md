@@ -1,50 +1,94 @@
 # go-purifier
 
-go-purifier makes Nix the dependency backend of a Go build. It records the
-files the go command downloads in a lockfile, so that Nix can build the
-module or workspace in its sandbox, and so that the go command and gopls
-read the same files offline. Your repository holds the lockfile next to
-`go.mod`.
+go-purifier keeps Go's development workflow on locked,
+Nix-resolved dependencies. Use the normal build and test commands in your
+working tree; building the project itself in the Nix sandbox is an
+optional next step.
+
+It follows the [purifier contract](https://github.com/nix-purifiers/purifier/blob/main/CONTRACT.md).
 
 go-purifier is one of the [nix-purifiers](https://nix-purifiers.github.io),
 which share one contract: the same builder interface, commands, checks
 and README sections for every build tool.
 
+## Installation
+
+Install the integration into your Nix profile once:
+
+```sh
+nix profile install 'github:nix-purifiers/go-purifier'
+```
+
+This installs the `go` wrapper. Use it for the locked
+development workflow below. With no purifier lockfile, it warns on standard
+error and runs the ordinary tool with impure resolution.
+
+`nix shell` makes an integration available temporarily instead of installing
+it. Keep using the activation steps below where a project environment or
+prefetched cache is required.
+
 ## Quickstart
 
-Lock the module or workspace, from its directory:
+Install Nix, then run the following from your existing project's root.
+The setup prepares the locked dependencies and the integration that
+Go's normal commands use:
 
 ```zsh
-nix run github:nix-purifiers/go-purifier -- lock
+nix develop github:nix-purifiers/go-purifier
+go-purifier lock
+go build ./...
+go test ./...
 ```
 
-This writes `go-purifier.lock.json` next to `go.mod`, or next to `go.work`
-for a workspace. We recommend committing it to the repository together
-with `go.sum`, and the builder and the commands look for both there by
-default.
+Commit the lockfiles that the lock command writes, including the build
+tool's own lockfile when it has one. Keep using the project's usual build,
+test and editor commands with this setup. Nix provides the locked
+dependencies; the development commands above run outside the Nix sandbox.
+No project Nix files are needed for this workflow.
 
-Then build the project with Nix, from its directory. The command adds no
-Nix file to the project. Replace `hello` with the name of one of the
-project's commands:
+Sandboxed builds of the whole project are an optional
+[next step](#building-the-project-with-nix).
 
-```zsh
-nix build --impure --expr '
-  let
-    purifier = builtins.getFlake "github:nix-purifiers/go-purifier";
-    pkgs = import purifier.inputs.nixpkgs {
-      system = builtins.currentSystem;
-      overlays = [ purifier.overlays.default ];
-    };
-  in
-  (pkgs.go-purifier.buildGoProject { src = ./.; }).packages.hello'
-```
+## Development loop
 
-This uses the purifier's pinned nixpkgs, matching the lock command above.
-To build with ambient `<nixpkgs>` from your Nix search path instead,
-replace `import purifier.inputs.nixpkgs` with `import <nixpkgs>`.
-Both forms need no Nix files in your project. The build tool and language
-versions must match the lockfile; with ambient nixpkgs, lock with the
-purifier from that package set or pass a compatible toolchain to the builder.
+`nix develop github:nix-purifiers/go-purifier` gives a shell with the
+flake's `go`, `gofmt`, gopls and `go-purifier`. Run go as usual. In a
+build with a current lockfile, the first go command builds the proxy tree
+of the lockfile through Nix, under a GC root in `.go-purifier/` at the
+lock root. Every go command then runs with `GOPROXY=file://<that tree>`,
+`GOSUMDB=off`, `GOTOOLCHAIN=local`, and a `GONOPROXY` that matches no
+module, so `GOPRIVATE` does not send the go command to version control.
+`go.sum` still verifies every module.
+
+To change a dependency, run `go get`, `go mod tidy` or another command
+that changes `go.mod`. These commands read the locked downloads first and
+then your own `GOPROXY`, so they can add modules the lockfile does not hold
+yet. The next build stops and says to run `go-purifier lock`; after that
+the build reads only the locked downloads again.
+
+The nix-purifiers contract has every command that needs a download
+outside the lockfile stop and name `go-purifier lock`. go-purifier does
+that for builds, tests and runs. A command that changes the dependencies
+downloads through your `GOPROXY` instead, because in Go the command that
+changes `go.mod` is the one that chooses the new versions.
+
+`go-purifier update` updates every module the build needs to its latest
+minor or patch version with `go get -u -t ./...`, then runs `go mod tidy`
+and the lock, so that `go.mod`, `go.sum` and the lockfile change in one
+run. `go-purifier update github.com/BurntSushi/toml` updates only the
+named modules, with `go get <module>@latest`. In a workspace it updates
+each module and then runs `go work sync`.
+
+A build without a lockfile resolves the usual way, and `GO_PURIFIER=0`
+turns the locked downloads off.
+
+## Building the project with Nix
+
+Once the native development workflow is working, you can also build and
+test the whole project in the Nix sandbox. For this step, keep a flake or
+another Nix build definition in the project's repository, or maintain an
+external packaging repository that points at its sources and lockfiles.
+The builder consumes the same lockfiles as the development workflow.
 
 The flake's `overlays.default` adds one attribute to a package set, the
 scope `go-purifier`. The scope holds the builder `buildGoProject`, the
@@ -120,38 +164,29 @@ workspace takes only `--lockfile`.
 nix-purifiers share: the download entries, the commands as outputs, and
 the problems that keep the lockfile from being used.
 
-## Development loop
+### One-off builds without a project Nix file
 
-`nix develop github:nix-purifiers/go-purifier` gives a shell with the
-flake's `go`, `gofmt`, gopls and `go-purifier`. Run go as usual. In a
-build with a current lockfile, the first go command builds the proxy tree
-of the lockfile through Nix, under a GC root in `.go-purifier/` at the
-lock root. Every go command then runs with `GOPROXY=file://<that tree>`,
-`GOSUMDB=off`, `GOTOOLCHAIN=local`, and a `GONOPROXY` that matches no
-module, so `GOPRIVATE` does not send the go command to version control.
-`go.sum` still verifies every module.
+For an ad hoc build, the builder can also be evaluated directly from the
+project root. Replace the example package name with one from your project:
 
-To change a dependency, run `go get`, `go mod tidy` or another command
-that changes `go.mod`. These commands read the locked downloads first and
-then your own `GOPROXY`, so they can add modules the lockfile does not hold
-yet. The next build stops and says to run `go-purifier lock`; after that
-the build reads only the locked downloads again.
+```zsh
+nix build --impure --expr '
+  let
+    purifier = builtins.getFlake "github:nix-purifiers/go-purifier";
+    pkgs = import purifier.inputs.nixpkgs {
+      system = builtins.currentSystem;
+      overlays = [ purifier.overlays.default ];
+    };
+  in
+  (pkgs.go-purifier.buildGoProject { src = ./.; }).packages.hello'
+```
 
-The nix-purifiers contract has every command that needs a download
-outside the lockfile stop and name `go-purifier lock`. go-purifier does
-that for builds, tests and runs. A command that changes the dependencies
-downloads through your `GOPROXY` instead, because in Go the command that
-changes `go.mod` is the one that chooses the new versions.
-
-`go-purifier update` updates every module the build needs to its latest
-minor or patch version with `go get -u -t ./...`, then runs `go mod tidy`
-and the lock, so that `go.mod`, `go.sum` and the lockfile change in one
-run. `go-purifier update github.com/BurntSushi/toml` updates only the
-named modules, with `go get <module>@latest`. In a workspace it updates
-each module and then runs `go work sync`.
-
-A build without a lockfile resolves the usual way, and `GO_PURIFIER=0`
-turns the locked downloads off.
+This uses the purifier's pinned nixpkgs, matching the lock command above.
+To build with ambient `<nixpkgs>` from your Nix search path instead,
+replace `import purifier.inputs.nixpkgs` with `import <nixpkgs>`.
+Both forms need no Nix files in your project. The build tool and language
+versions must match the lockfile; with ambient nixpkgs, lock with the
+purifier from that package set or pass a compatible toolchain to the builder.
 
 ## Working offline
 
@@ -258,6 +293,11 @@ These limits affect a build:
   libraries for cgo packages come from `buildInputs`.
 
 ## Examples
+
+For day-to-day work on these projects, use the native-tool setup and
+commands in [Quickstart](#quickstart) and [Development loop](#development-loop).
+The Nix expressions below show optional sandboxed packaging of those
+projects.
 
 ### fzf
 

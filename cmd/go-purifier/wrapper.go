@@ -209,11 +209,13 @@ const noProxyMatchesNothing = "go-purifier.invalid"
 func interactiveEnv(goBin, dir string, changing bool) ([]string, string, error) {
 	root, ok := findLockRoot(dir)
 	if !ok {
+		fmt.Fprintln(os.Stderr, "go-purifier: warning: no go-purifier.lock.json found; running go impurely. Run `go-purifier lock` to use Nix-resolved dependencies.")
 		return nil, "", nil
 	}
 	lockPath := lockPathAt(root, "")
 	lock, err := readLock(lockPath)
 	if errors.Is(err, fs.ErrNotExist) {
+		fmt.Fprintln(os.Stderr, "go-purifier: warning: no go-purifier.lock.json found; running go impurely. Run `go-purifier lock` to use Nix-resolved dependencies.")
 		return nil, "", nil
 	}
 	if err != nil {
