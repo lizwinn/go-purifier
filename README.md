@@ -366,12 +366,5 @@ with the same arguments, as in the Quickstart.
 
 ## Credits
 
-The design follows [sbt-nix-backend](https://github.com/nix-purifiers/sbt-purifier),
-the first of the nix-purifiers: the build tool keeps planning the build, a
-lock run with empty caches records what the tool downloads, Nix builds
-from the lockfile, and the interactive tool reads the same locked
-downloads. The purifier idea was inspired by nixcloud's
-[cargo (libnix)](https://github.com/nixcloud/cargo). Every download goes
-through [purifier](https://github.com/nix-purifiers/purifier), the shared
-library of the nix-purifiers, so the sandboxed build and the go wrapper
-fetch the same store paths.
+The purifier idea was inspired by nixcloud's
+[cargo (libnix)](https://github.com/nixcloud/cargo).
