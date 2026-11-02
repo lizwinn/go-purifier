@@ -82,17 +82,20 @@ live in the project's repository or in another one:
 
 ```nix
 {
-  inputs.go-purifier.url = "github:nix-purifiers/go-purifier";
+  inputs.go-purifier.url =
+    "github:nix-purifiers/go-purifier";
   inputs.nixpkgs.follows = "go-purifier/nixpkgs";
 
-  outputs = { nixpkgs, go-purifier, ... }:
+  outputs =
+    { nixpkgs, go-purifier, ... }:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs {
         inherit system;
         overlays = [ go-purifier.overlays.default ];
       };
-      build = pkgs.go-purifier.buildGoProject { src = ./.; };
+      build =
+        pkgs.go-purifier.buildGoProject { src = ./.; };
     in
     {
       packages.${system}.hello = build.packages.hello;
