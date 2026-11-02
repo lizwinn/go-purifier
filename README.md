@@ -34,7 +34,7 @@ For persistent use, add these packages through your usual Nix configuration.
 
 ## Development loop
 
-`nix develop github:nix-purifiers/go-purifier` gives a shell with the
+`nix shell 'github:nix-purifiers/go-purifier'` gives a shell with the
 flake's `go`, `gofmt`, gopls and `go-purifier`. Run go as usual. In a
 build with a current lockfile, the first go command builds the proxy tree
 of the lockfile through Nix, under a GC root in `.go-purifier/` at the
