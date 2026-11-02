@@ -291,9 +291,10 @@ passes the version to the linker, so the build does the same with
 `ldflags`:
 
 ```zsh
+nix shell 'github:nix-purifiers/go-purifier'
 git clone --branch v0.74.5 https://github.com/junegunn/fzf
 cd fzf
-nix run github:nix-purifiers/go-purifier -- lock
+go-purifier lock
 nix build --impure --expr 'let
   purifier = builtins.getFlake "github:nix-purifiers/go-purifier";
   pkgs = import purifier.inputs.nixpkgs {
@@ -315,8 +316,9 @@ directory of your own. Run the lock in a clone at the tag, and write the
 lockfile to that directory:
 
 ```zsh
+nix shell 'github:nix-purifiers/go-purifier'
 git clone --branch v0.74.5 https://github.com/junegunn/fzf
-(cd fzf && nix run github:nix-purifiers/go-purifier -- lock \
+(cd fzf && go-purifier lock \
   --lockfile ~/fzf-build/fzf.lock.json)
 cd ~/fzf-build
 ```
