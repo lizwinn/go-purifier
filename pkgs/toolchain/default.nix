@@ -30,6 +30,8 @@
   cli,
   # The source of the shared library of the nix-purifiers.
   purifierSrc,
+  python3,
+  writeShellScript,
 }:
 let
   # The go-purifier Nix library, with the shared library linked in as
@@ -39,7 +41,14 @@ let
     chmod u+w $out
     ln -s ${purifierSrc} $out/purifier
   '';
+  inputHelper = writeShellScript "go-purifier-inputs" ''
+    export PYTHONPATH=${lib.escapeShellArg ("${purifierSrc}/tools")}
+    exec ${python3}/bin/python3 ${../../tools/resolve_inputs.py}
+  '';
   wrapperArgs = lib.escapeShellArgs [
+    "--set"
+    "GO_PURIFIER_INPUT_HELPER"
+    "${inputHelper}"
     "--set-default"
     "GO_PURIFIER_GO"
     "${go}/bin/go"

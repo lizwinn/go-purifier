@@ -279,6 +279,31 @@ These limits affect a build:
   such as a `go generate` that downloads, fails in the sandbox. C
   libraries for cgo packages come from `buildInputs`.
 
+## Nix project dependencies
+
+Consume another purified Go project without changing its version in `go.mod`:
+
+```zsh
+go-purifier lock --input 'github:your-org/library#default'
+go run .
+go test ./...
+```
+
+The lock retains the Nix source pin. Supplied modules contribute no download
+hashes to the purifier lock or `go.sum`. The wrapper binds them through
+native Go workspaces; `go mod tidy` and `go get` use temporary module files.
+Use `go-purifier lock --no-inputs` to return to registry resolution.
+
+`buildGoProject` accepts `dependencies = [ library ];`, or reads the source
+pins from the lock. Its result, `all`, command packages, and release expose
+`projections.go`: a native Go module proxy with `.zip`, `.mod`, and `.info`
+files. Exported `go.mod` files reference Nix-derived dependency versions
+and contain no local replacements. Supplied archives are reused unchanged.
+Ordinary Go consumers can use this proxy through `GOPROXY`, with the usual
+`GONOSUMDB` policy for modules absent from the public checksum database.
+The existing `publish` command publishes Git tags and command archives;
+serving a projected module proxy is separate.
+
 ## Examples
 
 For day-to-day work on these projects, use the native-tool setup and

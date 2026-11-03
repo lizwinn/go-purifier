@@ -59,6 +59,8 @@ let
       # The source tree. It holds the lock root, and every directory a
       # replace directive of the build points at.
       src,
+      # Native repositories exported by other Nix-built Go projects.
+      dependencies ? null,
       # The fetchers of the shared library to replace, such as a fetchurl
       # with credentials or a company mirror, passed to its fetchEntry.
       fetchers ? { },
@@ -185,6 +187,53 @@ let
         entries = purifier.entriesFor stdenv.buildPlatform.system checkedLock;
       };
 
+      selectedInputs = purifier.projectInputs {
+        dependencies =
+          if dependencies != null then
+            dependencies
+          else
+            purifier.lockedProjectInputs {
+              inputs = currentLock.projectInputs or [ ];
+              system = stdenv.hostPlatform.system;
+            };
+        formats = [ "go" ];
+      };
+      projectionIdentity = runCommand "go-projection-identity" {
+        source = filteredSrc;
+        repositories = map (input: input.repository) selectedInputs;
+      } "touch $out";
+      projections.go =
+        runCommand "${pname}-go-repository"
+          {
+            outputs = [
+              "out"
+              "metadata"
+            ];
+            request = builtins.toJSON {
+              identity = (purifier.inputIdentity projectionIdentity).hash;
+              modules = map (
+                file: "${filteredSrc}/${lib.optionalString (modRoot != "") "${modRoot}/"}${builtins.dirOf file}"
+              ) (builtins.filter (file: baseNameOf file == "go.mod") currentLock.definitionFiles);
+              repositories = map (input: toString input.repository) selectedInputs;
+            };
+            passAsFile = [ "request" ];
+            passthru.catalog = "${projections.go.metadata}/catalog.json";
+          }
+          ''
+            ${lib.getExe cli} project-modules "$requestPath" "$out"
+            mkdir -p "$metadata" "$out/nix-support"
+            cp "$out/.catalog" "$metadata/catalog.json"
+            printf '%s\n' ${
+              lib.escapeShellArgs (
+                [ (toString filteredSrc) ]
+                ++ lib.concatMap (input: [
+                  (toString input.repository)
+                  (toString input.producer)
+                ]) selectedInputs
+              )
+            } > "$out/nix-support/inputs"
+          '';
+
       goFlags =
         lib.optionals (tags != [ ]) [ "-tags=${lib.concatStringsSep "," tags}" ]
         ++ lib.optionals (ldflags != [ ]) [ "-ldflags=${lib.concatStringsSep " " ldflags}" ];
@@ -204,12 +253,23 @@ let
         export HOME="$TMPDIR/home"
         export GOCACHE="$TMPDIR/go-cache"
         export GOMODCACHE="$TMPDIR/go-mod"
-        export GOPROXY=file://${proxy}
+        export GOPROXY=${
+          lib.escapeShellArg (
+            lib.concatStringsSep "," (
+              map (input: "file://${input.repository}") selectedInputs ++ [ "file://${proxy}" ]
+            )
+          )
+        }
         export GONOPROXY=go-purifier.invalid
         export GOSUMDB=off
         export GOENV=off
         export GOTOOLCHAIN=local
         export GOFLAGS="-mod=readonly -trimpath -buildvcs=false"
+        ${lib.optionalString (selectedInputs != [ ]) ''
+          ${lib.getExe cli} bind-module-inputs "$PWD" "$TMPDIR/go.work" \
+            ${lib.escapeShellArgs (map (input: toString input.repository) selectedInputs)}
+          export GOWORK="$TMPDIR/go.work"
+        ''}
         goWithHint() {
           if "$@" 2> "$TMPDIR/go-stderr"; then
             cat "$TMPDIR/go-stderr" >&2
@@ -255,7 +315,7 @@ let
           runHook preInstall
           runHook postInstall
         '';
-        passthru = { inherit lock proxy; };
+        passthru = { inherit lock proxy projections; };
         meta.description = "The commands of a Go build, built by go-purifier";
       };
 
@@ -283,7 +343,12 @@ let
         runCommand binary.name
           {
             passthru = {
-              inherit all lock proxy;
+              inherit
+                all
+                lock
+                proxy
+                projections
+                ;
               goPackage = binary.package;
             };
             meta = {
@@ -310,26 +375,30 @@ let
       archive =
         name:
         if version == null then "${name}_${GOOS}_${GOARCH}" else "${name}_${version}_${GOOS}_${GOARCH}";
-      release = runCommand "${pname}-release${lib.optionalString (version != null) "-${version}"}" { } ''
-        mkdir -p "$out" work
-        ${lib.concatMapStrings (b: ''
-          mkdir -p work/${b.name}
-          cp ${all}/bin/${b.name} work/${b.name}/
-          tar --sort=name --mtime=@1 --owner=0 --group=0 --numeric-owner \
-            -C work/${b.name} -cf - ${b.name} \
-            | gzip -9n > "$out/${archive b.name}.tar.gz"
-        '') currentLock.binaries}
-        cd "$out"
-        if ls *.tar.gz >/dev/null 2>&1; then
-          sha256sum *.tar.gz > SHA256SUMS
-        else
-          touch SHA256SUMS
-        fi
-      '';
+      release =
+        runCommand "${pname}-release${lib.optionalString (version != null) "-${version}"}"
+          { passthru = { inherit projections; }; }
+          ''
+            mkdir -p "$out" work
+            ${lib.concatMapStrings (b: ''
+              mkdir -p work/${b.name}
+              cp ${all}/bin/${b.name} work/${b.name}/
+              tar --sort=name --mtime=@1 --owner=0 --group=0 --numeric-owner \
+                -C work/${b.name} -cf - ${b.name} \
+                | gzip -9n > "$out/${archive b.name}.tar.gz"
+            '') currentLock.binaries}
+            cd "$out"
+            if ls *.tar.gz >/dev/null 2>&1; then
+              sha256sum *.tar.gz > SHA256SUMS
+            else
+              touch SHA256SUMS
+            fi
+          '';
     in
     {
       inherit
         packages
+        projections
         tests
         release
         all
