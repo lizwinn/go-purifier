@@ -20,7 +20,7 @@ work=$(cd "$work" && pwd)
 repo="$work/repo"
 rm -rf "$repo"
 mkdir -p "$repo"
-cp -r "$fixtures/hello" "$repo/hello"
+cp -R "$fixtures/hello" "$repo/hello"
 chmod -R u+w "$repo"
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.invalid
 export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.invalid

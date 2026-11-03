@@ -82,7 +82,7 @@ check() {
     "$gopls" check internal/greeting/greeting.go 2>&1)
 }
 expect "$(check "$fixtures/hello")" ""
-cp -r "$fixtures/hello" "$tmp/broken"
+cp -R "$fixtures/hello" "$tmp/broken"
 chmod -R u+w "$tmp/broken"
 printf '\nvar _ int = language.English\n' >> "$tmp/broken/internal/greeting/greeting.go"
 diagnostics=$(check "$tmp/broken" || true)
@@ -98,7 +98,7 @@ esac
 # proxy: go get fetches a version the lockfile does not hold, the next
 # build stops with the command to run, go-purifier lock renews the
 # lockfile, and the build runs offline again.
-cp -r "$fixtures/hello" "$tmp/upgrade"
+cp -R "$fixtures/hello" "$tmp/upgrade"
 chmod -R u+w "$tmp/upgrade"
 "$go" -C "$tmp/upgrade" get github.com/google/uuid@v1.5.0
 if error=$("$go" -C "$tmp/upgrade" build -o "$tmp/upgrade-bin/" ./... 2>&1); then
