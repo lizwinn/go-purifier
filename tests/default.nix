@@ -215,6 +215,11 @@ in
     ${lib.getExe hello.packages.uuidgen} | grep -Eqx '[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}'
     touch $out
   '';
+  composition-native-export = import ./native-projection.nix {
+    inherit pkgs;
+    project = replace;
+    projector = packages.cli;
+  };
   fixture-hello-tests = hello.tests;
   fixture-workspace =
     prints "fixture-workspace" "${lib.getExe workspace.packages.app} hello nix"

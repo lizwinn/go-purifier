@@ -41,6 +41,12 @@ Commands:
   go ...             run the go command against the locked downloads; the
                      same as invoking this binary as "go"
 
+lock accepts repeated --input <flake#package> options for Nix-built Go
+projects. Their source pins are retained on subsequent locks; their modules
+are excluded from download hashes. Native workspace bindings select them
+regardless of the upstream versions in go.mod. --no-inputs removes all such
+pins and returns to normal module resolution.
+
 --lockfile names a lockfile outside the source tree. The go command takes
 it from GO_PURIFIER_LOCKFILE. For lock and update, --tool-lockfile names a
 go.sum outside the source tree, which they write in place of the go.sum
@@ -83,6 +89,18 @@ func main() {
 		os.Exit(runGo(os.Args[2:]))
 	// The builders of the Nix derivations nix/lib makes; see vcs.go and
 	// wrapper.go.
+	case "bind-module-inputs":
+		if len(os.Args) < 5 {
+			err = fmt.Errorf("usage: bind-module-inputs <root> <go.work> <repository>...")
+		} else {
+			err = bindModuleInputs(os.Args[4:], os.Args[2], os.Args[3])
+		}
+	case "project-modules":
+		if len(os.Args) != 4 {
+			err = fmt.Errorf("usage: project-modules <request> <out>")
+		} else {
+			err = projectModules(os.Args[2], os.Args[3])
+		}
 	case "module-files":
 		err = moduleFilesCommand(os.Args[2:])
 	case "link-tree":

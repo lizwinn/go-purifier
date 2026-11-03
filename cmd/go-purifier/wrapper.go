@@ -72,6 +72,51 @@ func runGo(args []string) int {
 		}
 		return 0
 	}
+	dir, err := workingDir(args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	effective := args
+	if len(effective) >= 2 && effective[0] == "-C" {
+		effective = effective[2:]
+	} else if len(effective) > 0 && strings.HasPrefix(effective[0], "-C=") {
+		effective = effective[1:]
+	}
+	if len(effective) > 0 && (effective[0] == "get" || (len(effective) >= 2 && effective[0] == "mod" && effective[1] == "tidy")) {
+		if root, ok := findLockRoot(dir); ok {
+			if lock, err := readLock(lockPathAt(root, "")); err == nil && len(lock.ProjectInputs) > 0 {
+				inputs, err := resolveModuleInputs(root, lock.ProjectInputs, nil)
+				if err != nil {
+					fmt.Fprintln(os.Stderr, err)
+					return 1
+				}
+				module, ok := findUp(dir, "go.mod")
+				if !ok {
+					fmt.Fprintln(os.Stderr, "go-purifier: no go.mod for dependency editing")
+					return 1
+				}
+				alternate, cleanup, err := moduleEdit(module, inputs.Repositories)
+				if err != nil {
+					fmt.Fprintln(os.Stderr, err)
+					return 1
+				}
+				patterns, err := moduleInputPatterns(inputs.Repositories)
+				if err != nil {
+					cleanup(false)
+					fmt.Fprintln(os.Stderr, err)
+					return 1
+				}
+				env = append(env, "GOWORK=off", "GOFLAGS="+os.Getenv("GOFLAGS")+" -modfile="+alternate, "GONOSUMDB="+strings.Trim(os.Getenv("GONOSUMDB")+","+patterns, ","))
+				status := runWithHint(goBin, args, env, proxyDir)
+				if err := cleanup(status == 0); err != nil {
+					fmt.Fprintln(os.Stderr, err)
+					return 1
+				}
+				return status
+			}
+		}
+	}
 	return runWithHint(goBin, args, env, proxyDir)
 }
 
@@ -232,34 +277,48 @@ func interactiveEnv(goBin, dir string, changing bool) ([]string, string, error) 
 		return nil, "", err
 	}
 	if lock.DefinitionHash != definition {
-		if changing {
+		if !changing {
+			return nil, "", fmt.Errorf("go.mod, go.sum or go.work changed since %s was written; run `go-purifier lock`, or set GO_PURIFIER=0 to run go without the lockfile", lockPath)
+		}
+		if len(lock.ProjectInputs) == 0 {
 			return nil, "", nil
 		}
-		return nil, "", fmt.Errorf("go.mod, go.sum or go.work changed since %s was written; run `go-purifier lock`, or set GO_PURIFIER=0 to run go without the lockfile", lockPath)
 	}
 	proxyDir, err := realize(root, lockPath)
 	if err != nil {
 		return nil, "", err
+	}
+	inputs, err := resolveModuleInputs(root, lock.ProjectInputs, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	work, err := inputs.bind(root)
+	if err != nil {
+		return nil, "", err
+	}
+	var inputEnvironment []string
+	if work != "" {
+		inputEnvironment = append(inputEnvironment, "GOWORK="+work)
 	}
 	if changing {
 		goproxy, err := goOutput(goBin, dir, os.Environ(), "env", "GOPROXY")
 		if err != nil {
 			return nil, "", err
 		}
-		return []string{
-			"GOPROXY=file://" + proxyDir + "," + strings.TrimSpace(goproxy),
+		return append(inputEnvironment, []string{
+			"GOPROXY=" + moduleInputProxy(inputs.Repositories, "file://"+proxyDir+","+strings.TrimSpace(goproxy)),
 			"GOTOOLCHAIN=local",
-		}, proxyDir, nil
+		}...), proxyDir, nil
 	}
-	return []string{
-		"GOPROXY=file://" + proxyDir,
+	return append(inputEnvironment, []string{
+		"GOPROXY=" + moduleInputProxy(inputs.Repositories, "file://"+proxyDir),
 		"GONOPROXY=" + noProxyMatchesNothing,
 		// The lockfile pins every download by hash, and go.sum still holds
 		// the module checksums; the checksum database is not reachable
 		// offline.
 		"GOSUMDB=off",
 		"GOTOOLCHAIN=local",
-	}, proxyDir, nil
+	}...), proxyDir, nil
 }
 
 // stateDirName is the directory, at the lock root, that holds the GC roots

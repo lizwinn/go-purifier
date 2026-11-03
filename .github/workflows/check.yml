@@ -51,6 +51,20 @@ jobs:
       - name: Build the checks
         run: nix flake check --print-build-logs
 
+  composition:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+      - name: Build the toolchain
+        run: nix build .#toolchain --out-link toolchain
+      - name: Compose independent Go projects
+        run: python3 tests/composition-native.py toolchain
+
   conformance-relock:
     strategy:
       fail-fast: false

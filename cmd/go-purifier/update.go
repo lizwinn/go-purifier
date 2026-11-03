@@ -57,9 +57,22 @@ func updateAt(goBin, cwd, lockFlag string, modules []string) error {
 	// Each main module is updated on its own go.mod. In a workspace,
 	// GOWORK=off makes go get and go mod tidy act on that module alone.
 	goEnviron := append(os.Environ(), "GOFLAGS=-mod=mod", "GOTOOLCHAIN=local")
+	hasInputs := false
+	if old, err := readLock(lockPathAt(root, lockFlag)); err == nil && len(old.ProjectInputs) > 0 {
+		inputs, err := resolveModuleInputs(root, old.ProjectInputs, nil)
+		if err != nil {
+			return err
+		}
+		work, err := inputs.bind(root)
+		if err != nil {
+			return err
+		}
+		hasInputs = true
+		goEnviron = append(goEnviron, "GOWORK="+work, "GOFLAGS=-mod=readonly")
+	}
 	moduleEnviron := goEnviron
-	if workspace {
-		moduleEnviron = append(append([]string{}, goEnviron...), "GOWORK=off")
+	if workspace || hasInputs {
+		moduleEnviron = append(append([]string{}, goEnviron...), "GOWORK=off", "GOFLAGS=-mod=mod")
 	}
 	dirs, err := goOutput(goBin, root, goEnviron, "list", "-m", "-f", "{{.Dir}}")
 	if err != nil {
@@ -95,6 +108,38 @@ func updateAt(goBin, cwd, lockFlag string, modules []string) error {
 // runGoIn runs the go command in directory dir with the output of the
 // go command passed through.
 func runGoIn(goBin, dir string, env []string, args ...string) error {
+	if len(args) > 0 && (args[0] == "get" || (len(args) > 1 && args[0] == "mod" && args[1] == "tidy")) {
+		if root, ok := findLockRoot(dir); ok {
+			if lock, err := readLock(lockPathAt(root, "")); err == nil && len(lock.ProjectInputs) > 0 {
+				inputs, err := resolveModuleInputs(root, lock.ProjectInputs, nil)
+				if err != nil {
+					return err
+				}
+				alternate, cleanup, err := moduleEdit(dir, inputs.Repositories)
+				if err != nil {
+					return err
+				}
+				patterns, err := moduleInputPatterns(inputs.Repositories)
+				if err != nil {
+					cleanup(false)
+					return err
+				}
+				proxy, err := goOutput(goBin, dir, env, "env", "GOPROXY")
+				if err != nil {
+					cleanup(false)
+					return err
+				}
+				env = append(env, "GOWORK=off", "GOFLAGS=-mod=mod -modfile="+alternate,
+					"GOPROXY="+moduleInputProxy(inputs.Repositories, strings.TrimSpace(proxy)),
+					"GONOSUMDB="+strings.Trim(os.Getenv("GONOSUMDB")+","+patterns, ","))
+				_, err = goOutput(goBin, dir, env, args...)
+				if finishErr := cleanup(err == nil); finishErr != nil {
+					return finishErr
+				}
+				return err
+			}
+		}
+	}
 	_, err := goOutput(goBin, dir, env, args...)
 	return err
 }

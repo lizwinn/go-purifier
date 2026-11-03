@@ -36,7 +36,8 @@ const defaultProxy = "https://proxy.golang.org"
 // download against), the repository and revision of each module from
 // version control, the main packages, and what tells a stale lockfile.
 type Lock struct {
-	Version int `json:"version"`
+	ProjectInputs []projectInput `json:"projectInputs,omitempty"`
+	Version       int            `json:"version"`
 	// The module proxy the files were downloaded from. A file is at its
 	// path under this URL.
 	Proxy string `json:"proxy"`
@@ -165,6 +166,10 @@ func (e goEnv) lockRoot() (string, bool, error) {
 // go.sum as they are, and a lock of an unchanged project writes the same
 // lockfile byte for byte.
 func lockCommand(args []string) error {
+	references, args, err := moduleInputFlags(args)
+	if err != nil {
+		return err
+	}
 	lockFlag, args, err := lockfileFlag(args)
 	if err != nil {
 		return err
@@ -185,13 +190,16 @@ func lockCommand(args []string) error {
 		return err
 	}
 	return withToolLock(goBin, cwd, toolFlag, func() error {
-		return lockAt(goBin, cwd, lockFlag)
+		return lockAtWithInputs(goBin, cwd, lockFlag, references)
 	})
 }
 
 // lockAt locks the module or workspace of directory dir into the lockfile
 // that lockFlag or the lock root names.
 func lockAt(goBin, dir, lockFlag string) error {
+	return lockAtWithInputs(goBin, dir, lockFlag, nil)
+}
+func lockAtWithInputs(goBin, dir, lockFlag string, references []string) error {
 	env, err := readGoEnv(goBin, dir)
 	if err != nil {
 		return err
@@ -201,7 +209,19 @@ func lockAt(goBin, dir, lockFlag string) error {
 		return err
 	}
 	lockPath := lockPathAt(root, lockFlag)
-	if !workspace {
+	var previous []projectInput
+	if old, err := readLock(lockPath); err == nil {
+		previous = old.ProjectInputs
+	}
+	inputs, err := resolveModuleInputs(root, previous, references)
+	if err != nil {
+		return err
+	}
+	work, err := inputs.bind(root)
+	if err != nil {
+		return err
+	}
+	if !workspace && len(inputs.Repositories) == 0 {
 		if err := completeGoSum(goBin, root); err != nil {
 			return err
 		}
@@ -214,7 +234,7 @@ func lockAt(goBin, dir, lockFlag string) error {
 		noProxy = previousNoProxy(lockPath)
 	}
 	fmt.Fprintf(os.Stderr, "go-purifier: locking %s from %s\n", root, proxy)
-	settings := lockSettings{NoProxy: noProxy, Private: env.GOPRIVATE, Insecure: env.GOINSECURE, VCS: env.GOVCS}
+	settings := lockSettings{Work: work, Repositories: inputs.Repositories, NoProxy: noProxy, Private: env.GOPRIVATE, Insecure: env.GOINSECURE, VCS: env.GOVCS}
 	if settings.Private == "" {
 		settings.Private = noProxy
 	}
@@ -222,6 +242,14 @@ func lockAt(goBin, dir, lockFlag string) error {
 	if err != nil {
 		return fmt.Errorf("%w\nThe lock reads go.mod as it is. When the go command says that go.mod lacks a module, run `go mod tidy`, then `go-purifier lock` again.", err)
 	}
+	if err := stripModuleInputSums(root, lock.DefinitionFiles, inputs.Repositories); err != nil {
+		return err
+	}
+	lock.DefinitionHash, err = definitionHash(root, lock.DefinitionFiles, nil)
+	if err != nil {
+		return err
+	}
+	lock.ProjectInputs = inputs.Inputs
 	if err := writeLock(lockPath, lock); err != nil {
 		return err
 	}
@@ -252,6 +280,11 @@ func lockProxy(goproxy string) string {
 // lockSettings are the go settings of the lock run that concern modules
 // from version control.
 type lockSettings struct {
+	NoSumDB string
+	// A generated native workspace binds supplied module identities.
+	Work         string
+	Repositories []string
+
 	// The GONOPROXY patterns: the modules fetched from version control.
 	NoProxy string
 	// The GOPRIVATE patterns, which make GOVCS treat a module as private.
@@ -286,10 +319,13 @@ func lockEnv(tmp, proxy string, s lockSettings) []string {
 		"GOPATH="+filepath.Join(tmp, "gopath"),
 		"GOMODCACHE="+filepath.Join(tmp, "mod"),
 		"GOCACHE="+filepath.Join(tmp, "build"),
-		"GOPROXY="+proxy,
+		"GOPROXY="+moduleInputProxy(s.Repositories, proxy),
 		"GOFLAGS=-mod=readonly",
 		"GOTOOLCHAIN=local",
 	)
+	if s.Work != "" {
+		env = append(env, "GOWORK="+s.Work)
+	}
 	for _, kv := range [][2]string{
 		{"GONOPROXY", s.NoProxy},
 		{"GONOSUMDB", s.NoProxy},
@@ -300,6 +336,9 @@ func lockEnv(tmp, proxy string, s lockSettings) []string {
 		if kv[1] != "" {
 			env = append(env, kv[0]+"="+kv[1])
 		}
+	}
+	if s.NoSumDB != "" {
+		env = append(env, "GONOSUMDB="+s.NoSumDB)
 	}
 	return env
 }
@@ -338,6 +377,13 @@ func makeLock(goBin, root string, workspace bool, proxy string, settings lockSet
 	if err != nil {
 		return nil, err
 	}
+	patterns, err := moduleInputPatterns(settings.Repositories)
+	if err != nil {
+		return nil, err
+	}
+	if patterns != "" {
+		settings.NoSumDB = strings.Trim(settings.NoProxy+","+patterns, ",")
+	}
 	env := lockEnv(tmp, proxy, settings)
 	defer removeModCache(goBin, root, env, tmp)
 
@@ -371,11 +417,15 @@ func makeLock(goBin, root string, workspace bool, proxy string, settings lockSet
 	// The go.mod and go.sum of the main modules and of every directory a
 	// replace directive points at define the dependencies.
 	var dirs []string
+	supplied, err := moduleInputNames(settings.Repositories)
+	if err != nil {
+		return nil, err
+	}
 	for _, m := range mods {
 		switch {
 		case m.Main:
 			dirs = append(dirs, m.Dir)
-		case m.Replace != nil && m.Replace.Version == "":
+		case m.Replace != nil && m.Replace.Version == "" && !supplied[m.Path]:
 			dirs = append(dirs, m.Replace.Dir)
 		}
 	}
@@ -388,6 +438,9 @@ func makeLock(goBin, root string, workspace bool, proxy string, settings lockSet
 
 	cacheDir := filepath.Join(tmp, "mod", "cache", "download")
 	if lock.Files, err = collectFiles(cacheDir, noProxy); err != nil {
+		return nil, err
+	}
+	if err := omitModuleInputs(lock.Files, settings.Repositories); err != nil {
 		return nil, err
 	}
 	if lock.VCSModules, lock.Checkouts, err = vcsModules(cacheDir, noProxy, tools); err != nil {
